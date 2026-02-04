@@ -1,0 +1,422 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Sofia Transit Map</title>
+
+    <link rel="stylesheet"
+          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet"
+          href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet"
+          href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+
+    <style>
+        body {
+            margin: 0;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 8px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            max-width: 300px;
+        }
+
+        #controls button {
+            margin: 2px;
+        }
+
+        #routeSearch {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ccc;
+        }
+
+        #routeSearch input {
+            width: calc(100% - 70px);
+            padding: 5px;
+            margin-right: 5px;
+        }
+
+        #routeSearch button {
+            padding: 5px 10px;
+        }
+
+        #routeInfo {
+            margin-top: 10px;
+            padding: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            display: none;
+        }
+
+        #routeInfo h4 {
+            margin: 0 0 5px 0;
+        }
+
+        #routeInfo button {
+            margin-top: 5px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        #stationsList {
+            margin-top: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            border-top: 1px solid #ccc;
+            padding-top: 5px;
+        }
+
+        #stationsList h5 {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        .station-item {
+            padding: 4px 6px;
+            margin: 2px 0;
+            background: white;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 13px;
+            border-left: 3px solid #007bff;
+        }
+
+        .station-item:hover {
+            background: #e9ecef;
+        }
+
+        #map {
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <div>
+            <button onclick="loadStations('Metro')">Metro</button>
+            <button onclick="loadStations('Tram')">Tram</button>
+            <button onclick="loadStations('Bus')">Bus</button>
+            <button onclick="loadStations('Trolleybus')">Trolley</button>
+            <button onclick="loadStations()">All</button>
+        </div>
+
+        <div id="routeSearch">
+            <input type="text" id="lineNumberInput" placeholder="Enter line number (e.g., 84, M1)" />
+            <button onclick="searchRoute()">Search</button>
+        </div>
+
+        <div id="routeInfo"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        const transitTypeMap = {
+            0: "Unknown",
+            1: "Metro",
+            2: "Tram",
+            3: "Bus",
+            4: "Trolleybus"
+        };
+
+        let currentType = "Metro";
+        let currentRouteLayer = null;
+        let routeStationMarkers = [];
+
+        // Map init
+        const map = L.map("map", {
+            center: [42.6977, 23.3219],
+            zoom: 12,
+            maxZoom: 19
+        });
+        const markers = L.markerClusterGroup({
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            maxClusterRadius: 50,
+            disableClusteringAtZoom: 16
+        });
+        map.addLayer(markers);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "© OpenStreetMap contributors",
+            maxZoom: 19
+        }).addTo(map);
+
+        // Colored marker icons with letter symbol by transit type
+        function getIcon(type) {
+            const colors = {
+                Metro: "red",
+                Tram: "green",
+                Bus: "blue",
+                Trolleybus: "orange"
+            };
+
+            const letters = {
+                Metro: "M",
+                Tram: "T",
+                Bus: "B",
+                Trolleybus: "TB"
+            };
+
+            return L.divIcon({
+                className: "",
+                html: `
+            <div style="
+                background:${colors[type] || 'gray'};
+                width:20px;
+                height:20px;
+                border-radius:50%;
+                border:1px solid #000;
+                color:white;
+                font-weight:bold;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                font-size:12px;
+            ">
+                ${letters[type] || "?"}
+            </div>
+        `,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+        }
+
+        // Route station marker (larger and highlighted)
+        function getRouteStationIcon(color) {
+            return L.divIcon({
+                className: "",
+                html: `
+            <div style="
+                background:${color};
+                width:12px;
+                height:12px;
+                border-radius:50%;
+                border:3px solid white;
+                box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            "></div>
+        `,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9]
+            });
+        }
+
+        // Get route color by transit type
+        function getRouteColor(transitType) {
+            const colors = {
+                1: "#dc3545", // Metro - red
+                2: "#28a745", // Tram - green
+                3: "#007bff", // Bus - blue
+                4: "#fd7e14"  // Trolleybus - orange
+            };
+            return colors[transitType] || "#6c757d";
+        }
+
+        // Load stations from API
+        function loadStations(type) {
+            currentType = type;
+            markers.clearLayers();
+
+            const bounds = map.getBounds();
+            const params = new URLSearchParams({
+                minLat: bounds.getSouth(),
+                maxLat: bounds.getNorth(),
+                minLon: bounds.getWest(),
+                maxLon: bounds.getEast(),
+                limit: 1000
+            });
+            if (type) params.append("type", type);
+
+            fetch(`/api/stations?${params.toString()}`)
+                .then(r => {
+                    if (!r.ok) {
+                        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    if (!Array.isArray(data)) {
+                        console.error("Expected array but got:", data);
+                        return;
+                    }
+                    
+                    data.forEach(s => {
+                        const typeName = transitTypeMap[s.transitType] || "Unknown";
+
+                        const marker = L.marker([s.latitude, s.longitude], {
+                            icon: getIcon(typeName)
+                        }).bindPopup(`<b>${s.stopName}</b><br>${typeName}`);
+
+                        markers.addLayer(marker);
+                    });
+
+                })
+                .catch(err => console.error("Failed to load stations", err));
+        }
+
+        // Search for route by line number
+        function searchRoute() {
+            const lineNumber = document.getElementById("lineNumberInput").value.trim();
+            
+            if (!lineNumber) {
+                alert("Please enter a line number");
+                return;
+            }
+
+            fetch(`/api/routes/${encodeURIComponent(lineNumber)}`)
+                .then(r => {
+                    if (!r.ok) {
+                        throw new Error(`Route '${lineNumber}' not found`);
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    displayRoute(data);
+                })
+                .catch(err => {
+                    alert(err.message);
+                    console.error("Failed to load route", err);
+                });
+        }
+
+        // Display route on map
+        function displayRoute(routeDetails) {
+            // Clear previous route
+            if (currentRouteLayer) {
+                map.removeLayer(currentRouteLayer);
+            }
+            routeStationMarkers.forEach(m => map.removeLayer(m));
+            routeStationMarkers = [];
+
+            // Create layer group for route shapes
+            currentRouteLayer = L.layerGroup();
+
+            const color = getRouteColor(routeDetails.transitType);
+            const transitTypeName = transitTypeMap[routeDetails.transitType] || "Unknown";
+
+            // Draw all shapes for this route
+            routeDetails.shapes.forEach(shape => {
+                const latLngs = shape.points.map(p => [p[0], p[1]]);
+                
+                const polyline = L.polyline(latLngs, {
+                    color: color,
+                    weight: 4,
+                    opacity: 0.7
+                }).bindPopup(`<b>${routeDetails.route.routeShortName}</b><br>${routeDetails.route.routeLongName}`);
+
+                currentRouteLayer.addLayer(polyline);
+            });
+
+            currentRouteLayer.addTo(map);
+
+            // Add station markers for this route
+            routeDetails.stations.forEach((station, index) => {
+                const marker = L.marker([station.latitude, station.longitude], {
+                    icon: getRouteStationIcon(color),
+                    zIndexOffset: 1000
+                }).bindPopup(`<b>${station.stopName}</b><br>Stop ${index + 1}`);
+
+                marker.addTo(map);
+                routeStationMarkers.push(marker);
+            });
+
+            // Fit map to route bounds
+            if (routeDetails.shapes.length > 0 && routeDetails.shapes[0].points.length > 0) {
+                const allPoints = routeDetails.shapes.flatMap(s => s.points.map(p => [p[0], p[1]]));
+                const bounds = L.latLngBounds(allPoints);
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+
+            // Display route info with stations list
+            const stationsList = routeDetails.stations.map((s, i) => 
+                `<div class="station-item" onclick="focusStation(${s.latitude}, ${s.longitude}, '${s.stopName.replace(/'/g, "\\'")}')" style="border-left-color: ${color}">
+                    ${i + 1}. ${s.stopName}
+                </div>`
+            ).join('');
+
+            const routeInfo = document.getElementById("routeInfo");
+            routeInfo.innerHTML = `
+                <h4>Route ${routeDetails.route.routeShortName}</h4>
+                <p><strong>${routeDetails.route.routeLongName}</strong></p>
+                <p>Type: ${transitTypeName}</p>
+                <p>Trips: ${routeDetails.trips.length}</p>
+                <div id="stationsList">
+                    <h5>Stations (${routeDetails.stations.length}):</h5>
+                    ${stationsList}
+                </div>
+                <button onclick="clearRoute()">Clear Route</button>
+            `;
+            routeInfo.style.display = "block";
+        }
+
+        // Focus on a specific station
+        function focusStation(lat, lon, name) {
+            map.setView([lat, lon], 16);
+            
+            // Find and open popup for this station marker
+            routeStationMarkers.forEach(marker => {
+                const markerLatLng = marker.getLatLng();
+                if (Math.abs(markerLatLng.lat - lat) < 0.0001 && Math.abs(markerLatLng.lng - lon) < 0.0001) {
+                    marker.openPopup();
+                }
+            });
+        }
+
+        // Clear route from map
+        function clearRoute() {
+            if (currentRouteLayer) {
+                map.removeLayer(currentRouteLayer);
+                currentRouteLayer = null;
+            }
+            routeStationMarkers.forEach(m => map.removeLayer(m));
+            routeStationMarkers = [];
+            document.getElementById("routeInfo").style.display = "none";
+            document.getElementById("lineNumberInput").value = "";
+        }
+
+        // Enter key support for search
+        document.getElementById("lineNumberInput").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                searchRoute();
+            }
+        });
+
+        map.on('moveend', () => {
+            loadStations(currentType);
+        });
+
+        // update currentType when buttons are clicked
+        document.querySelectorAll('#controls button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const type = btn.textContent.trim();
+                if (type === 'All') {
+                    currentType = null;
+                } else {
+                    currentType = type;
+                }
+                loadStations(currentType);
+            });
+        });
+
+        // Default load
+        loadStations("Metro");
+    </script>
+
+</body>
+</html>

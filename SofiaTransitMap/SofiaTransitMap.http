@@ -1,0 +1,6 @@
+@SofiaTransitMap_HostAddress = http://localhost:5001
+
+GET {{SofiaTransitMap_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
