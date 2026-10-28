@@ -79,7 +79,7 @@ export function renderHome(root, { signal }) {
             <div class="section-head" style="margin-bottom:8px"><h2 style="font-size:1rem">${esc(t('home.pulse'))}</h2>
                 <a class="link-btn" href="#/stats">${esc(t('home.toStats'))}</a></div>
             <dl class="line-facts" style="margin:0">
-                <div><dt>${esc(t('home.onRoute'))}</dt><dd>${data.vehicles.length}</dd></div>
+                <div><dt>${esc(t('home.onRoute'))}</dt><dd>${data.vehicles.filter(v => !v.scheduled).length}</dd></div>
                 <div><dt>${esc(t('home.delayedShare'))}</dt><dd>${fmtPct(tracked.length ? delayed / tracked.length : null)}</dd></div>
                 <div><dt>${esc(t('home.avgDelay'))}</dt><dd>${fmtMin(avg)} <small class="muted">${esc(t('unit.min'))}</small></dd></div>
             </dl>`;

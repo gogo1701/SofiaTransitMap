@@ -33,6 +33,8 @@ namespace SofiaTransitMap.Controllers
         {
             var feed = _store.Require();
             var live = _realtime.Snapshot.Vehicles.GroupBy(v => v.RouteId).ToDictionary(g => g.Key, g => g.Count());
+            foreach (var g in ScheduledVehicles.Compute(feed, SofiaClock.Now, live.Keys.ToHashSet()).GroupBy(s => s.Route.Id))
+                live[g.Key] = g.Count();
             var routes = feed.Routes.Where(r => r.Trips.Count > 0);
             if (type.HasValue) routes = routes.Where(r => r.Mode == type.Value);
             return Ok(Sorted(routes).Select(r => new
@@ -210,6 +212,37 @@ namespace SofiaTransitMap.Controllers
                     occupancy = v.Occupancy,
                     wheelchair = trip?.Wheelchair ?? false,
                     timestamp = v.Timestamp,
+                    scheduled = false,
+                });
+            }
+            var liveRoutes = snap.Vehicles.Select(v => v.RouteId).ToHashSet();
+            foreach (var s in ScheduledVehicles.Compute(feed, SofiaClock.Now, liveRoutes))
+            {
+                if (routeId != null && s.Route.Id != routeId) continue;
+                if (type.HasValue && s.Route.Mode != type.Value) continue;
+                items.Add(new
+                {
+                    id = s.Id,
+                    tripId = s.Trip.Id,
+                    routeId = s.Route.Id,
+                    route = s.Route.ShortName,
+                    mode = s.Route.Mode,
+                    color = s.Route.Color,
+                    textColor = s.Route.TextColor,
+                    lat = Math.Round(s.Lat, 6),
+                    lon = Math.Round(s.Lon, 6),
+                    bearing = s.Bearing is double b ? Math.Round(b) : (double?)null,
+                    speedKmh = (double?)null,
+                    delaySec = (int?)null,
+                    headsign = s.Trip.Headsign,
+                    headsignEn = s.Trip.HeadsignEn,
+                    nextStop = s.NextStop?.Name,
+                    nextStopEn = s.NextStop?.NameEn,
+                    status = (string?)null,
+                    occupancy = (string?)null,
+                    wheelchair = s.Trip.Wheelchair,
+                    timestamp = s.Timestamp,
+                    scheduled = true,
                 });
             }
             return Ok(new { fetchedAt = snap.FetchedAt == DateTimeOffset.MinValue ? (DateTimeOffset?)null : snap.FetchedAt, fresh = _realtime.IsFresh, vehicles = items });

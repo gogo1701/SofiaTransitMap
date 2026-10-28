@@ -185,6 +185,8 @@ namespace SofiaTransitMap.Gtfs
                 stop.Routes.Add(route.Index);
             }
 
+            InferDirections(routes, trips, stops, stStop);
+
             // CSR stop -> rows
             var counts = new int[stops.Count + 1];
             for (var i = 0; i < n; i++) counts[stStop[i] + 1]++;
@@ -304,6 +306,51 @@ namespace SofiaTransitMap.Gtfs
 
             BuildFootpaths(feed, open);
             return ReadFeedInfo(feed, open);
+        }
+
+        /// <summary>
+        /// The Sofia feed omits direction_id, so every trip of a line would fall into one direction.
+        /// Trips are classified against the line's most common stop pattern: a trip whose early part lies
+        /// nearer the start of that pattern than its late part runs the same way (0), otherwise the opposite way (1).
+        /// Geometry is used rather than stop ids because opposite directions usually stop on opposite kerbs.
+        /// </summary>
+        private static void InferDirections(List<GtfsRoute> routes, List<GtfsTrip> trips, List<GtfsStop> stops, int[] stStop)
+        {
+            foreach (var route in routes)
+            {
+                var routeTrips = route.Trips.Select(i => trips[i]).Where(t => t.StCount >= 2).ToList();
+                if (routeTrips.Count == 0 || routeTrips.Any(t => t.Direction >= 0)) continue;
+
+                var reference = routeTrips
+                    .GroupBy(t => (First: stStop[t.StStart], Last: stStop[t.StStart + t.StCount - 1], t.StCount))
+                    .OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key.StCount)
+                    .First().First();
+                var refStops = Enumerable.Range(reference.StStart, reference.StCount).Select(r => stops[stStop[r]]).ToArray();
+
+                int Nearest(GtfsStop s)
+                {
+                    var best = 0;
+                    var bestD = double.MaxValue;
+                    for (var i = 0; i < refStops.Length; i++)
+                    {
+                        var d = Geo.DistanceMeters(s.Lat, s.Lon, refStops[i].Lat, refStops[i].Lon);
+                        if (d < bestD) { bestD = d; best = i; }
+                    }
+                    return best;
+                }
+
+                foreach (var trip in routeTrips)
+                {
+                    if (trip.StCount == reference.StCount && trip.StStart == reference.StStart) { trip.Direction = 0; continue; }
+                    // Quarter points rather than terminals keep loop lines (same first and last stop) classifiable.
+                    var early = trip.StCount >= 4 ? trip.StCount / 4 : 0;
+                    var late = trip.StCount >= 4 ? trip.StCount - 1 - trip.StCount / 4 : trip.StCount - 1;
+                    var a = Nearest(stops[stStop[trip.StStart + early]]);
+                    var b = Nearest(stops[stStop[trip.StStart + late]]);
+                    trip.Direction = a <= b ? 0 : 1;
+                }
+                foreach (var t in route.Trips.Select(i => trips[i]).Where(t => t.Direction < 0)) t.Direction = 0;
+            }
         }
 
         private static void BuildFootpaths(GtfsFeed feed, Func<string, TextReader?> open)

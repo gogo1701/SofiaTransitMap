@@ -13,6 +13,8 @@ const STRINGS = {
         'live.ok': '{n} на линия',
         'live.stale': 'Данните закъсняват',
         'live.error': 'Няма връзка',
+        'pwa.install': 'Инсталирай',
+        'pwa.offline': 'Офлайн сте. Приложението е заредено, но данните на живо не са достъпни.',
         'sheet.toggle': 'Разгъни или свий панела',
         'map.label': 'Карта', 'map.locate': 'Моето местоположение', 'map.layers': 'Слоеве',
 
@@ -28,7 +30,10 @@ const STRINGS = {
         'error.locate': 'Не успяхме да определим местоположението ви.',
 
         'layers.show': 'Покажи', 'layers.vehicles': 'Превозни средства', 'layers.stops': 'Спирки', 'layers.modes': 'Вид транспорт',
-        'legend.late3': 'Закъснение над 3 мин', 'legend.late10': 'Закъснение над 10 мин',
+        'legend.late3': 'Закъснение над 3 мин', 'legend.late10': 'Закъснение над 10 мин', 'legend.scheduled': 'По разписание',
+        'veh.position': 'Позиция', 'veh.scheduled': 'по разписание',
+        'veh.scheduledNote': 'Метрото не подава данни в реално време. Позицията е изчислена от разписанието.',
+        'lines.scheduledNow': 'по разписание сега',
 
         'veh.delay': 'Закъснение', 'veh.noData': 'Няма данни', 'veh.next': 'Следваща спирка', 'veh.speed': 'Скорост',
         'veh.occupancy': 'Заетост', 'veh.vehicle': 'Превозно средство', 'veh.updated': 'Обновено', 'veh.showLine': 'Виж линията',
@@ -154,6 +159,8 @@ const STRINGS = {
         'live.ok': '{n} in service',
         'live.stale': 'Data delayed',
         'live.error': 'Offline',
+        'pwa.install': 'Install',
+        'pwa.offline': 'You are offline. The app is available, but live data cannot be reached.',
         'sheet.toggle': 'Expand or collapse the panel',
         'map.label': 'Map', 'map.locate': 'My location', 'map.layers': 'Layers',
 
@@ -169,7 +176,10 @@ const STRINGS = {
         'error.locate': 'We could not determine your location.',
 
         'layers.show': 'Show', 'layers.vehicles': 'Vehicles', 'layers.stops': 'Stops', 'layers.modes': 'Transport type',
-        'legend.late3': 'Over 3 min late', 'legend.late10': 'Over 10 min late',
+        'legend.late3': 'Over 3 min late', 'legend.late10': 'Over 10 min late', 'legend.scheduled': 'Scheduled',
+        'veh.position': 'Position', 'veh.scheduled': 'from timetable',
+        'veh.scheduledNote': 'The metro publishes no realtime data. This position is estimated from the timetable.',
+        'lines.scheduledNow': 'scheduled now',
 
         'veh.delay': 'Delay', 'veh.noData': 'No data', 'veh.next': 'Next stop', 'veh.speed': 'Speed',
         'veh.occupancy': 'Occupancy', 'veh.vehicle': 'Vehicle', 'veh.updated': 'Updated', 'veh.showLine': 'Show line',

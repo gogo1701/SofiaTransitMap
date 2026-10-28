@@ -86,7 +86,7 @@ export function renderLine(root, { params, signal }) {
                 <dl class="line-facts">
                     <div><dt>${esc(t('lines.tripsToday'))}</dt><dd>${fmtNum(d.tripsToday)}</dd></div>
                     <div><dt>${esc(t('lines.firstLast'))}</dt><dd>${d.firstDeparture ? `${esc(clock(d.firstDeparture))}–${esc(clock(d.lastDeparture))}` : '–'}</dd></div>
-                    <div><dt>${esc(t('lines.liveNow'))}</dt><dd>${live.length}${avg != null ? ` <small class="delay ${avg >= 600 ? 'bad' : avg >= 180 ? 'warn' : 'ok'}" style="font-size:.75rem">ø ${fmtNum(avg / 60, 1)} ${esc(t('unit.min'))}</small>` : ''}</dd></div>
+                    <div><dt>${esc(t(live.length && live.every(v => v.scheduled) ? 'lines.scheduledNow' : 'lines.liveNow'))}</dt><dd>${live.length}${avg != null ? ` <small class="delay ${avg >= 600 ? 'bad' : avg >= 180 ? 'warn' : 'ok'}" style="font-size:.75rem">ø ${fmtNum(avg / 60, 1)} ${esc(t('unit.min'))}</small>` : ''}</dd></div>
                 </dl>
                 <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
                     <a class="btn btn-ghost btn-sm" href="#/stats/${encodeURIComponent(route.id)}">${esc(t('lines.punctuality'))}</a>

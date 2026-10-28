@@ -14,6 +14,14 @@ official open GTFS feeds of the Urban Mobility Center (ЦГМ / sofiatraffic.bg)
   most delayed lines and a sortable per-line table with per-line charts.
 - **Alerts**: current service notices (detours, closures) linked to the affected lines.
 - Bulgarian interface with an English toggle; responsive (bottom sheet on mobile); keyboard and screen-reader friendly.
+- Installable PWA with an offline-cached application shell and install prompt in supported browsers.
+- Metro (M1–M4) timetables come from the static GTFS feed. The realtime feed carries no metro trains, so their
+  map positions are estimated from the timetable, drawn as dashed markers and excluded from delay statistics.
+- Trip directions are inferred from stop geometry because the feed omits `direction_id`.
+
+The app shell and interface assets can be opened offline after installation. Live vehicles,
+departures, routing, geocoding, map tiles and statistics still require a network connection; API responses
+are deliberately not cached to avoid presenting stale transit data as current.
 
 ## Run
 

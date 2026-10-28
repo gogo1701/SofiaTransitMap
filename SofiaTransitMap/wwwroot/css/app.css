@@ -113,6 +113,14 @@ button { cursor: pointer; }
 }
 
 .topbar-tools { margin-left: auto; display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.install-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid rgb(255 255 255 / .4); border-radius: var(--radius);
+    padding: 6px 9px; background: transparent; color: #fff;
+    font-weight: 600; font-size: .82rem;
+}
+.install-btn:hover { background: rgb(255 255 255 / .12); }
+.install-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .live-pill { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: #E4E7F5; white-space: nowrap; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF; }
 .live-pill[data-state="live"] .live-dot { background: #4ADE80; box-shadow: 0 0 0 3px rgb(74 222 128 / .25); }
@@ -125,6 +133,13 @@ button { cursor: pointer; }
 }
 .lang-switch button[aria-pressed="true"] { background: #fff; color: var(--navy); }
 .lang-switch button:focus-visible { outline-color: #fff; outline-offset: -3px; }
+.offline-banner {
+    position: fixed; z-index: 2100; top: var(--topbar-h); left: 50%; transform: translateX(-50%);
+    max-width: calc(100vw - 24px); padding: 8px 14px;
+    border-radius: 0 0 var(--radius) var(--radius);
+    background: var(--warn-tint); color: #713F12; box-shadow: var(--shadow);
+    font-size: .875rem; font-weight: 600; text-align: center;
+}
 
 /* ---------- Shell ---------- */
 .shell { position: relative; height: calc(100% - var(--topbar-h)); display: flex; }
@@ -353,6 +368,9 @@ button { cursor: pointer; }
 .veh .late { position: absolute; top: -5px; right: -5px; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff; }
 .veh .late.warn { background: #F59E0B; }
 .veh .late.bad { background: var(--bad); }
+/* Timetable-estimated position (metro has no realtime feed): hollow, dashed, so it never reads as tracked. */
+.veh.sched { background: #fff; color: var(--c); border: 2px dashed var(--c); box-shadow: 0 1px 2px rgb(0 0 0 / .2); }
+.map-legend i.sched { background: #fff; border: 2px dashed var(--muted); width: 12px; height: 12px; border-radius: 3px; }
 .leaflet-marker-icon.veh-icon { transition: transform 1.6s var(--ease-out); }
 .leaflet-zoom-anim .leaflet-marker-icon.veh-icon, .no-glide .leaflet-marker-icon.veh-icon { transition: none; }
 .zoom-far .veh { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; font-size: 0; border-width: 1px; }
@@ -376,6 +394,7 @@ button { cursor: pointer; }
 .popup-grid dt { color: var(--muted); }
 .popup-grid dd { margin: 0; color: var(--ink); font-weight: 600; }
 .popup-actions { margin-top: 10px; display: flex; gap: 6px; }
+.popup-note { margin: 8px 0 0; font-size: .78rem; color: var(--muted); max-width: 30ch; }
 
 /* ---------- Stop view ---------- */
 .stop-title { display: flex; gap: 12px; align-items: flex-start; }

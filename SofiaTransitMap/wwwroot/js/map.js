@@ -92,7 +92,8 @@ function renderLayersMenu() {
 function renderLegend() {
     document.getElementById('mapLegend').innerHTML =
         VEHICLE_MODES.concat('Metro').map(m => `<span><i style="background:${MODE_COLOR[m]}"></i>${esc(modeName(m))}</span>`).join('') +
-        `<span><i style="background:#F59E0B"></i>${esc(t('legend.late3'))}</span><span><i style="background:#B91C1C"></i>${esc(t('legend.late10'))}</span>`;
+        `<span><i style="background:#F59E0B"></i>${esc(t('legend.late3'))}</span><span><i style="background:#B91C1C"></i>${esc(t('legend.late10'))}</span>` +
+        `<span><i class="sched"></i>${esc(t('legend.scheduled'))}</span>`;
 }
 
 // ---------- Stops ----------
@@ -158,7 +159,7 @@ export function setRouteFilter(routeId) {
 function vehicleHtml(v) {
     const c = routeColor({ color: v.color, mode: v.mode });
     const late = v.delaySec >= 600 ? 'bad' : v.delaySec >= 180 ? 'warn' : '';
-    return `<div class="veh" aria-hidden="true" style="--c:${c};--tc:${textOn(c)};--b:${v.bearing ?? 0}deg">${esc(v.route)}`
+    return `<div class="veh${v.scheduled ? ' sched' : ''}" aria-hidden="true" style="--c:${c};--tc:${textOn(c)};--b:${v.bearing ?? 0}deg">${esc(v.route)}`
         + (v.bearing != null ? '<i class="arrow"></i>' : '')
         + (late ? `<i class="late ${late}"></i>` : '') + '</div>';
 }
@@ -201,13 +202,16 @@ function vehiclePopup(v) {
     const occupancy = v.occupancy ? t(`occ.${v.occupancy}`) : null;
     return `<div class="popup-head">${badge(route)}<strong>${esc(nameOf(v, 'headsign'))}</strong></div>
         <dl class="popup-grid">
-            <dt>${esc(t('veh.delay'))}</dt><dd><span class="delay ${delayClass(v.delaySec)}">${v.delaySec == null ? esc(t('veh.noData')) : esc(fmtDelay(v.delaySec))}</span></dd>
+            ${v.scheduled
+                ? `<dt>${esc(t('veh.position'))}</dt><dd>${esc(t('veh.scheduled'))}</dd>`
+                : `<dt>${esc(t('veh.delay'))}</dt><dd><span class="delay ${delayClass(v.delaySec)}">${v.delaySec == null ? esc(t('veh.noData')) : esc(fmtDelay(v.delaySec))}</span></dd>`}
             ${v.nextStop ? `<dt>${esc(t('veh.next'))}</dt><dd>${esc(nameOf(v, 'nextStop'))}</dd>` : ''}
             ${v.speedKmh != null ? `<dt>${esc(t('veh.speed'))}</dt><dd>${v.speedKmh} ${esc(t('unit.kmh'))}</dd>` : ''}
             ${occupancy && !occupancy.startsWith('occ.') ? `<dt>${esc(t('veh.occupancy'))}</dt><dd>${esc(occupancy)}</dd>` : ''}
-            <dt>${esc(t('veh.vehicle'))}</dt><dd>${esc(v.id)}${v.wheelchair ? ' ♿' : ''}</dd>
-            <dt>${esc(t('veh.updated'))}</dt><dd>${esc(clock(v.timestamp * 1000))}</dd>
+            ${v.scheduled ? '' : `<dt>${esc(t('veh.vehicle'))}</dt><dd>${esc(v.id)}${v.wheelchair ? ' ♿' : ''}</dd>
+            <dt>${esc(t('veh.updated'))}</dt><dd>${esc(clock(v.timestamp * 1000))}</dd>`}
         </dl>
+        ${v.scheduled ? `<p class="popup-note">${esc(t('veh.scheduledNote'))}</p>` : ''}
         <div class="popup-actions"><a class="btn btn-ghost btn-sm" href="#/lines/${encodeURIComponent(v.routeId)}">${esc(t('veh.showLine'))}</a></div>`;
 }
 

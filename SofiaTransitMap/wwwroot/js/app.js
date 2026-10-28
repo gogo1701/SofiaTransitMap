@@ -24,8 +24,42 @@ const panelBody = document.getElementById('panelBody');
 const page = document.getElementById('page');
 const pill = document.getElementById('livePill');
 const pillText = document.getElementById('liveText');
+const offlineBanner = document.getElementById('offlineBanner');
+const installBtn = document.getElementById('installBtn');
 
 let current = { cleanup: null, controller: null, tab: null, page: false };
+let installPrompt;
+
+function updateConnectionStatus() {
+    offlineBanner.hidden = navigator.onLine;
+}
+
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+updateConnectionStatus();
+
+window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    installPrompt = event;
+    installBtn.hidden = false;
+});
+
+installBtn.addEventListener('click', async () => {
+    if (!installPrompt) return;
+    const prompt = installPrompt;
+    installPrompt = null;
+    installBtn.hidden = true;
+    try {
+        await prompt.prompt();
+    } catch (err) {
+        console.error('PWA install prompt failed', err);
+    }
+});
+
+window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    installBtn.hidden = true;
+});
 
 function navigate() {
     const path = decodeURI(location.hash.replace(/^#/, '')) || '/map';
@@ -102,6 +136,9 @@ function initSheet() {
 
 // ---------- Boot ----------
 applyStatic();
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(err => console.error('Service worker registration failed', err));
+}
 document.querySelectorAll('[data-lang]').forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
 onLangChange(() => {
     navigate();
