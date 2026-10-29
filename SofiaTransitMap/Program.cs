@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using SofiaTransitMap.Infrastructure;
@@ -29,6 +29,18 @@ builder.Services.AddHttpClient("nominatim", c =>
         ?? "SofiaTransitMap/1.0 (https://github.com/gogo1701/SofiaTransitMap)");
 });
 
+builder.Services.AddHttpClient("photon", c =>
+{
+    c.BaseAddress = new Uri(builder.Configuration["Geocoding:PhotonUrl"] ?? "https://photon.komoot.io/");
+    c.Timeout = TimeSpan.FromSeconds(6);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd(builder.Configuration["Geocoding:UserAgent"]
+        ?? "SofiaTransitMap/1.0 (https://github.com/gogo1701/SofiaTransitMap)");
+});
+builder.Services.AddHttpClient("google", c =>
+{
+    c.BaseAddress = new Uri("https://places.googleapis.com/");
+    c.Timeout = TimeSpan.FromSeconds(6);
+});
 builder.Services.AddHttpClient("tiles", c =>
 {
     c.BaseAddress = new Uri(builder.Configuration["Tiles:BaseUrl"] ?? "https://tile.openstreetmap.org/");

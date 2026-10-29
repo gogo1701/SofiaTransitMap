@@ -5,6 +5,13 @@ import { esc, ICON, debounce } from './util.js';
 
 let uid = 0;
 
+// Results that are a street, area or plain address get a pin; named businesses and landmarks get a storefront.
+const ADDRESS_KINDS = new Set(['place', 'highway', 'building', 'boundary', 'landuse', 'point', 'route', 'street_address',
+    'premise', 'subpremise', 'geocode', 'locality', 'sublocality', 'sublocality_level_1', 'neighborhood', 'postal_code']);
+const iconFor = p => p.kind === 'stop' ? ICON.stop : p.kind === 'here' ? ICON.locate
+    : ADDRESS_KINDS.has(p.kind) ? ICON.pin : ICON.poi;
+const newSession = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 export function attachAutocomplete(input, { onPick, signal, extraItems }) {
     const wrap = input.parentElement;
     wrap.style.position = 'relative';
@@ -23,6 +30,8 @@ export function attachAutocomplete(input, { onPick, signal, extraItems }) {
     let items = [];
     let active = -1;
     let controller;
+    // Google bills autocomplete keystrokes + the final details lookup as one session when they share a token.
+    let session = newSession();
 
     const close = () => {
         list.hidden = true;
@@ -40,26 +49,36 @@ export function attachAutocomplete(input, { onPick, signal, extraItems }) {
         } else {
             list.innerHTML = items.map((p, i) => `
                 <li role="option" id="${id}-${i}" data-i="${i}" aria-selected="${i === active}">
-                    <span class="s-icon">${p.kind === 'stop' ? ICON.stop : p.kind === 'here' ? ICON.locate : ICON.pin}</span>
+                    <span class="s-icon">${iconFor(p)}</span>
                     <span><span class="s-main">${esc(p.label)}</span>${p.detail ? `<br><span class="s-detail">${esc(p.detail)}</span>` : ''}</span>
                 </li>`).join('');
         }
         open();
     };
 
-    const pick = i => {
+    const pick = async i => {
         const p = items[i];
         if (!p) return;
         input.value = p.label;
         close();
-        onPick(p);
+        if (p.lat != null && p.lon != null) { onPick(p); return; }
+        if (!p.placeId) return;
+        const token = session;
+        session = newSession();
+        try {
+            const place = await api(`geocode/place/${encodeURIComponent(p.placeId)}`, { params: { lang: lang(), session: token }, signal });
+            if (input.value !== p.label) return;
+            onPick({ ...p, ...place, label: p.label, detail: p.detail ?? place.detail });
+        } catch (err) {
+            if (err.name !== 'AbortError') { items = []; render('error'); }
+        }
     };
 
     const search = debounce(async q => {
         controller?.abort();
         controller = new AbortController();
         try {
-            const results = await api('geocode', { params: { q, lang: lang() }, signal: controller.signal });
+            const results = await api('geocode', { params: { q, lang: lang(), session }, signal: controller.signal });
             if (input.value.trim() !== q) return;
             items = results;
             active = -1;

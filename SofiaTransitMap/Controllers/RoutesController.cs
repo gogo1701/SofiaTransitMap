@@ -138,7 +138,7 @@ namespace SofiaTransitMap.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> Search([FromQuery] string q, [FromQuery] string lang = "bg", CancellationToken ct = default)
+        public async Task<IActionResult> Search([FromQuery] string q, [FromQuery] string lang = "bg", [FromQuery] string? session = null, CancellationToken ct = default)
         {
             q = (q ?? "").Trim();
             if (q.Length < 2) return Ok(Array.Empty<GeoPlace>());
@@ -151,8 +151,16 @@ namespace SofiaTransitMap.Controllers
                     $"#{s.Code}", s.Lat, s.Lon, "stop", s.Id)));
             }
             if (!q.All(char.IsDigit))
-                results.AddRange(await _geo.SearchAsync(q, lang, ct));
+                results.AddRange(await _geo.SearchAsync(q, lang, session, ct));
             return Ok(results.Take(10));
+        }
+
+        /// <summary>Coordinates for a Google Places suggestion (which comes without them).</summary>
+        [HttpGet("place/{placeId}")]
+        public async Task<IActionResult> Place(string placeId, [FromQuery] string lang = "bg", [FromQuery] string? session = null, CancellationToken ct = default)
+        {
+            var place = await _geo.ResolveAsync(placeId, lang, session, ct);
+            return place == null ? NotFound() : Ok(place);
         }
 
         [HttpGet("reverse")]

@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'sofia-transit-shell-v7';
+const SHELL_CACHE = 'sofia-transit-shell-v9';
 const RUNTIME_CACHE = 'sofia-transit-runtime-v1';
 const SHELL_FILES = [
     '/',
@@ -38,7 +38,7 @@ const CORE_EXTERNAL_FILES = [
 
 self.addEventListener('install', event => {
     event.waitUntil(Promise.all([
-        caches.open(SHELL_CACHE).then(cache => cache.addAll(SHELL_FILES)),
+        caches.open(SHELL_CACHE).then(cache => cache.addAll(SHELL_FILES.map(url => new Request(url, { cache: 'no-cache' })))),
         cacheCoreExternalFiles(),
     ]));
     self.skipWaiting();
@@ -61,16 +61,20 @@ self.addEventListener('fetch', event => {
     const url = new URL(request.url);
     if (url.origin === self.location.origin) {
         if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/openapi/') || url.pathname.startsWith('/tiles/')) return;
-        event.respondWith(networkFirst(request, SHELL_CACHE));
+        // Always revalidate app files so a deploy is picked up on the next load, never a stale HTTP-cache copy.
+        event.respondWith(networkFirst(request, SHELL_CACHE, 'no-cache'));
     } else if (CACHEABLE_HOSTS.has(url.hostname)) {
         event.respondWith(networkFirst(request, RUNTIME_CACHE));
     }
 });
 
-async function networkFirst(request, cacheName) {
+async function networkFirst(request, cacheName, cacheMode) {
     let response;
     try {
-        response = await fetch(request);
+        // A navigate-mode Request can't be re-initialised, so refetch it by URL.
+        response = !cacheMode ? await fetch(request)
+            : request.mode === 'navigate' ? await fetch(request.url, { cache: cacheMode, credentials: 'same-origin' })
+            : await fetch(request, { cache: cacheMode });
     } catch (error) {
         const cached = await caches.match(request);
         if (cached) return cached;
