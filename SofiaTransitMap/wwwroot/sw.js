@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'sofia-transit-shell-v3';
+const SHELL_CACHE = 'sofia-transit-shell-v4';
 const RUNTIME_CACHE = 'sofia-transit-runtime-v1';
 const SHELL_FILES = [
     '/',
@@ -59,7 +59,7 @@ self.addEventListener('fetch', event => {
 
     const url = new URL(request.url);
     if (url.origin === self.location.origin) {
-        if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/openapi/')) return;
+        if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/openapi/') || url.pathname.startsWith('/tiles/')) return;
         event.respondWith(networkFirst(request, SHELL_CACHE));
     } else if (CACHEABLE_HOSTS.has(url.hostname)) {
         event.respondWith(networkFirst(request, RUNTIME_CACHE));

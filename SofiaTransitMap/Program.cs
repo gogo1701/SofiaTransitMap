@@ -29,6 +29,14 @@ builder.Services.AddHttpClient("nominatim", c =>
         ?? "SofiaTransitMap/1.0 (https://github.com/gogo1701/SofiaTransitMap)");
 });
 
+builder.Services.AddHttpClient("tiles", c =>
+{
+    c.BaseAddress = new Uri(builder.Configuration["Tiles:BaseUrl"] ?? "https://tile.openstreetmap.org/");
+    c.Timeout = TimeSpan.FromSeconds(15);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd(builder.Configuration["Geocoding:UserAgent"]
+        ?? "SofiaTransitMap/1.0 (https://github.com/gogo1701/SofiaTransitMap)");
+});
+
 var dataDir = Path.Combine(builder.Environment.ContentRootPath, "App_Data");
 Directory.CreateDirectory(dataDir);
 var connection = builder.Configuration.GetConnectionString("Transit") ?? "Data Source=App_Data/transit.db";

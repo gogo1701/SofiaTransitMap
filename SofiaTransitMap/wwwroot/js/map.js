@@ -36,7 +36,8 @@ export function initMap() {
     map = L.map('map', { zoomControl: false, minZoom: 10, maxZoom: 19 }).setView(SOFIA, 13);
     map.setMaxBounds([[42.35, 22.85], [43.05, 23.8]]);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Served through our own origin: OSM blocks many tunnel/proxy requests with "403 Access blocked".
+    L.tileLayer('/tiles/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · GTFS &copy; <a href="https://www.sofiatraffic.bg">ЦГМ</a>',
         maxZoom: 19, className: 'base-tiles',
     }).addTo(map);
