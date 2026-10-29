@@ -446,7 +446,6 @@ button { cursor: pointer; }
 .map-legend i.sched { background: var(--paper); border: 2px dashed var(--muted); width: 12px; height: 12px; border-radius: 3px; }
 /* Metro navy disappears against the dark map; lift the timetable-estimated outline. */
 [data-theme="dark"] .veh.sched { background: color-mix(in srgb, var(--c) 28%, var(--paper)); color: var(--ink); }
-.vehicle-glide .leaflet-marker-icon.veh-icon { transition: transform 1.6s var(--ease-out); }
 /* The dot/badge switch at zoom 14 morphs on the same curve and duration as Leaflet's zoom, instead of snapping. */
 .veh { transition: width .25s cubic-bezier(0,0,.25,1), height .25s cubic-bezier(0,0,.25,1), margin .25s cubic-bezier(0,0,.25,1), border-radius .25s cubic-bezier(0,0,.25,1), font-size .25s cubic-bezier(0,0,.25,1), border-width .25s cubic-bezier(0,0,.25,1); }
 .cv-layer { position: absolute; left: 0; top: 0; pointer-events: none; }

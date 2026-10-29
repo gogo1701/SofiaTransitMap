@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'sofia-transit-shell-v4';
+const SHELL_CACHE = 'sofia-transit-shell-v5';
 const RUNTIME_CACHE = 'sofia-transit-runtime-v1';
 const SHELL_FILES = [
     '/',

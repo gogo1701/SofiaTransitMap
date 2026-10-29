@@ -18,7 +18,15 @@ let routeFilter = null;
 let lastVehicleData = null;
 let zooming = false;
 let vehiclesPending = false;
-let glideTimer;
+let motionFrame = 0;
+let lastMotionAt = 0;
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+// Dead reckoning: between feed updates (every ~20 s) live vehicles keep moving along their bearing at their
+// reported speed; when a real position arrives the marker blends into it instead of jumping.
+const PREDICT_MAX_MS = 25_000;
+const CORRECT_MS = 1500;
+const M_PER_DEG = 111_320;
 
 function loadPrefs() {
     try {
@@ -49,10 +57,8 @@ export function initMap() {
     pinLayer = L.layerGroup().addTo(map);
     hoverTip = L.tooltip({ direction: 'top', opacity: 1 });
 
-    map.on('zoomstart', () => {
-        zooming = true;
-        stopVehicleGlide();
-    });
+    map.on('zoomstart', () => { zooming = true; });
+
     map.on('zoomanim', e => updateZoomClass(e.zoom));
     map.on('zoom', () => { if (!map._animatingZoom) updateZoomClass(); });
     map.on('zoomend', () => {
@@ -208,20 +214,10 @@ function vehicleHtml(v) {
         + (late ? `<i class="late ${late}"></i>` : '') + '</div>';
 }
 
-function stopVehicleGlide() {
-    clearTimeout(glideTimer);
-    map.getContainer().classList.remove('vehicle-glide');
-}
-
 function applyVehicles(data, instant = false) {
     // Moving markers mid-zoom fights Leaflet's zoom transition; the latest data is applied when the zoom settles.
     if (zooming) { vehiclesPending = true; return; }
-    const container = map.getContainer();
-    stopVehicleGlide();
-    if (!instant) {
-        container.classList.add('vehicle-glide');
-        glideTimer = setTimeout(stopVehicleGlide, 1600);
-    }
+    const now = performance.now();
     const seen = new Set();
     for (const v of data.vehicles) {
         const visible = prefs.vehicles && prefs.modes.has(v.mode) && (!routeFilter || v.routeId === routeFilter);
@@ -235,22 +231,81 @@ function applyVehicles(data, instant = false) {
                 keyboard: false, riseOnHover: true,
                 title: `${modeName(v.mode)} ${v.route}`,
             });
-            entry = { marker, html, v };
+            entry = { marker, html, v, off: null };
             marker.bindPopup(() => vehiclePopup(entry.v), { offset: [0, -8], maxWidth: 280 });
             marker.addTo(vehLayer);
             vehicles.set(v.id, entry);
         } else {
-            entry.marker.setLatLng([v.lat, v.lon]);
             if (entry.html !== html) { entry.marker.setIcon(L.divIcon({ className: 'veh-icon', html, iconSize: [0, 0] })); entry.html = html; }
             if (entry.marker.isPopupOpen()) entry.marker.setPopupContent(vehiclePopup(v));
+            // Ease from where the marker is drawn now (the prediction) to the reported position.
+            const shown = entry.marker.getLatLng();
+            entry.off = instant ? null : { lat: shown.lat - v.lat, lon: shown.lng - v.lon, at: now };
         }
         entry.v = v;
+        entry.at = now;
+        entry.vel = velocity(v);
+        placeVehicle(entry, now);
     }
     for (const [id, entry] of vehicles) {
         if (!seen.has(id)) { vehLayer.removeLayer(entry.marker); vehicles.delete(id); }
     }
+    startMotion();
 }
 
+// Degrees per millisecond along the bearing, or null when the vehicle shouldn't be extrapolated.
+function velocity(v) {
+    if (v.scheduled || v.bearing == null || !(v.speedKmh >= 3) || v.status === 'StoppedAt') return null;
+    const mps = v.speedKmh / 3.6;
+    const rad = v.bearing * Math.PI / 180;
+    return {
+        lat: Math.cos(rad) * mps / M_PER_DEG / 1000,
+        lon: Math.sin(rad) * mps / (M_PER_DEG * Math.cos(v.lat * Math.PI / 180)) / 1000,
+    };
+}
+
+function placeVehicle(entry, now) {
+    const { v, vel, off } = entry;
+    let lat = v.lat, lon = v.lon;
+    if (vel && !reduceMotion.matches) {
+        const dt = Math.min(now - entry.at, PREDICT_MAX_MS);
+        lat += vel.lat * dt;
+        lon += vel.lon * dt;
+    }
+    if (off) {
+        const k = Math.min(1, (now - off.at) / CORRECT_MS);
+        if (k >= 1 || reduceMotion.matches) entry.off = null;
+        else {
+            const remain = (1 - k) ** 3; // ease-out
+            lat += off.lat * remain;
+            lon += off.lon * remain;
+        }
+    }
+    const cur = entry.marker.getLatLng();
+    if (cur.lat !== lat || cur.lng !== lon) entry.marker.setLatLng([lat, lon]);
+}
+
+function startMotion() {
+    if (!motionFrame) motionFrame = requestAnimationFrame(motionTick);
+}
+
+function motionTick(now) {
+    motionFrame = 0;
+    if (document.hidden || !vehicles.size) return;
+    // Movement is sub-pixel when zoomed out, so fewer updates are needed there.
+    const zoom = map.getZoom();
+    const every = zoom >= 15 ? 0 : zoom >= 13 ? 100 : 500;
+    if (!zooming && now - lastMotionAt >= every) {
+        lastMotionAt = now;
+        const view = map.getBounds().pad(0.2);
+        for (const entry of vehicles.values()) {
+            if (!entry.vel && !entry.off) continue;
+            if (!entry.off && !view.contains([entry.v.lat, entry.v.lon])) continue;
+            placeVehicle(entry, now);
+        }
+    }
+    motionFrame = requestAnimationFrame(motionTick);
+}
 function vehiclePopup(v) {
     const route = { shortName: v.route, color: v.color, mode: v.mode };
     const occupancy = v.occupancy ? t(`occ.${v.occupancy}`) : null;
