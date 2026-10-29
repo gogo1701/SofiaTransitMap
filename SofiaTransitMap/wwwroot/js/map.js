@@ -4,6 +4,7 @@ import { t, onLangChange } from './i18n.js';
 import { esc, badge, routeColor, textOn, nameOf, fmtDelay, delayClass, modeName, MODE_COLOR, clock, toast } from './util.js';
 import { createCanvasLayer } from './canvas-layer.js';
 import { theme, onThemeChange, cssVar } from './theme.js';
+import { shapeFor, requestShape, project, pointAt } from './route-track.js';
 
 const SOFIA = [42.6977, 23.3219];
 const VEHICLE_MODES = ['Tram', 'Trolleybus', 'Bus'];
@@ -22,8 +23,10 @@ let motionFrame = 0;
 let lastMotionAt = 0;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-// Dead reckoning: between feed updates (every ~20 s) live vehicles keep moving along their bearing at their
-// reported speed; when a real position arrives the marker blends into it instead of jumping.
+// Dead reckoning: between feed updates (every ~20 s) live vehicles keep moving at their reported speed, along
+// their trip's route line when it is known (straight along the bearing otherwise); when a real position arrives
+// the marker blends into it instead of jumping. Set PREDICT_MOTION to false to show reported positions only.
+const PREDICT_MOTION = true;
 const PREDICT_MAX_MS = 25_000;
 const CORRECT_MS = 1500;
 const M_PER_DEG = 111_320;
@@ -245,6 +248,8 @@ function applyVehicles(data, instant = false) {
         entry.v = v;
         entry.at = now;
         entry.vel = velocity(v);
+        entry.s0 = undefined;
+        entry.heading = null;
         placeVehicle(entry, now);
     }
     for (const [id, entry] of vehicles) {
@@ -253,12 +258,13 @@ function applyVehicles(data, instant = false) {
     startMotion();
 }
 
-// Degrees per millisecond along the bearing, or null when the vehicle shouldn't be extrapolated.
+// Speed and per-millisecond straight-line step, or null when the vehicle shouldn't be extrapolated.
 function velocity(v) {
-    if (v.scheduled || v.bearing == null || !(v.speedKmh >= 3) || v.status === 'StoppedAt') return null;
+    if (!PREDICT_MOTION || v.scheduled || v.bearing == null || !(v.speedKmh >= 3) || v.status === 'StoppedAt') return null;
     const mps = v.speedKmh / 3.6;
     const rad = v.bearing * Math.PI / 180;
     return {
+        mps,
         lat: Math.cos(rad) * mps / M_PER_DEG / 1000,
         lon: Math.sin(rad) * mps / (M_PER_DEG * Math.cos(v.lat * Math.PI / 180)) / 1000,
     };
@@ -269,8 +275,17 @@ function placeVehicle(entry, now) {
     let lat = v.lat, lon = v.lon;
     if (vel && !reduceMotion.matches) {
         const dt = Math.min(now - entry.at, PREDICT_MAX_MS);
-        lat += vel.lat * dt;
-        lon += vel.lon * dt;
+        const shape = v.shapeId ? shapeFor(v.shapeId) : null;
+        if (shape && entry.s0 === undefined) entry.s0 = project(shape, v.lat, v.lon, v.bearing);
+        if (shape && entry.s0 != null) {
+            const p = pointAt(shape, entry.s0 + vel.mps * dt / 1000);
+            lat = p.lat;
+            lon = p.lon;
+            setHeading(entry, p.bearing);
+        } else {
+            lat += vel.lat * dt;
+            lon += vel.lon * dt;
+        }
     }
     if (off) {
         const k = Math.min(1, (now - off.at) / CORRECT_MS);
@@ -289,6 +304,15 @@ function startMotion() {
     if (!motionFrame) motionFrame = requestAnimationFrame(motionTick);
 }
 
+// Turns the direction arrow as the predicted position follows bends in the route.
+function setHeading(entry, bearing) {
+    if (entry.heading != null && Math.abs(((bearing - entry.heading + 540) % 360) - 180) < 4) return;
+    const el = entry.marker.getElement()?.firstElementChild;
+    if (!el) return;
+    el.style.setProperty('--b', `${Math.round(bearing)}deg`);
+    entry.heading = bearing;
+}
+
 function motionTick(now) {
     motionFrame = 0;
     if (document.hidden || !vehicles.size) return;
@@ -301,6 +325,8 @@ function motionTick(now) {
         for (const entry of vehicles.values()) {
             if (!entry.vel && !entry.off) continue;
             if (!entry.off && !view.contains([entry.v.lat, entry.v.lon])) continue;
+            // Route lines are fetched only for vehicles on screen at street-level zoom, where the bends show.
+            if (entry.vel && zoom >= 14) requestShape(entry.v.shapeId);
             placeVehicle(entry, now);
         }
     }

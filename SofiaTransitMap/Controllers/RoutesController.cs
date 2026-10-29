@@ -176,6 +176,15 @@ namespace SofiaTransitMap.Controllers
             _realtime = realtime;
         }
 
+        /// <summary>A trip shape as [lat, lon] pairs, so the client can move vehicles along their route between updates.</summary>
+        [HttpGet("shapes/{shapeId}")]
+        public IActionResult Shape(string shapeId)
+        {
+            var feed = _store.Require();
+            if (!feed.Shapes.ContainsKey(shapeId)) return NotFound();
+            Response.Headers.CacheControl = "public, max-age=3600";
+            return Ok(feed.ShapePoints(shapeId).Select(p => new[] { Math.Round(p[0], 5), Math.Round(p[1], 5) }));
+        }
         [HttpGet("vehicles")]
         public IActionResult Vehicles([FromQuery] string? routeId = null, [FromQuery] TransitType? type = null)
         {
@@ -194,6 +203,7 @@ namespace SofiaTransitMap.Controllers
                 {
                     id = v.VehicleId,
                     v.TripId,
+                    shapeId = string.IsNullOrEmpty(trip?.ShapeId) ? null : trip.ShapeId,
                     routeId = route.Id,
                     route = route.ShortName,
                     mode = route.Mode,

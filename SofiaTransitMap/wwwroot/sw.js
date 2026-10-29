@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'sofia-transit-shell-v5';
+const SHELL_CACHE = 'sofia-transit-shell-v6';
 const RUNTIME_CACHE = 'sofia-transit-runtime-v1';
 const SHELL_FILES = [
     '/',
@@ -12,6 +12,7 @@ const SHELL_FILES = [
     '/js/i18n.js',
     '/js/map.js',
     '/js/theme.js',
+    '/js/route-track.js',
     '/js/util.js',
     '/js/views/alerts.js',
     '/js/views/home.js',
