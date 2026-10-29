@@ -371,8 +371,11 @@ button { cursor: pointer; }
 /* Timetable-estimated position (metro has no realtime feed): hollow, dashed, so it never reads as tracked. */
 .veh.sched { background: #fff; color: var(--c); border: 2px dashed var(--c); box-shadow: 0 1px 2px rgb(0 0 0 / .2); }
 .map-legend i.sched { background: #fff; border: 2px dashed var(--muted); width: 12px; height: 12px; border-radius: 3px; }
-.leaflet-marker-icon.veh-icon { transition: transform 1.6s var(--ease-out); }
-.leaflet-zoom-anim .leaflet-marker-icon.veh-icon, .no-glide .leaflet-marker-icon.veh-icon { transition: none; }
+.vehicle-glide .leaflet-marker-icon.veh-icon { transition: transform 1.6s var(--ease-out); }
+/* The dot/badge switch at zoom 14 morphs on the same curve and duration as Leaflet's zoom, instead of snapping. */
+.veh { transition: width .25s cubic-bezier(0,0,.25,1), height .25s cubic-bezier(0,0,.25,1), margin .25s cubic-bezier(0,0,.25,1), border-radius .25s cubic-bezier(0,0,.25,1), font-size .25s cubic-bezier(0,0,.25,1), border-width .25s cubic-bezier(0,0,.25,1); }
+.cv-layer { position: absolute; left: 0; top: 0; pointer-events: none; }
+.cv-proxy { position: absolute; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none; }
 .zoom-far .veh { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; font-size: 0; border-width: 1px; }
 .zoom-far .veh .arrow, .zoom-far .veh .late { display: none; }
 .veh-icon.dim { opacity: .25; }

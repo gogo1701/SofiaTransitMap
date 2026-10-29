@@ -1,12 +1,13 @@
-// Leaflet map: base tiles, stops (canvas), live vehicles (gliding div markers), journey/line overlays.
+// Leaflet map: base tiles, stops and route overlays (frame-synced canvas), live vehicles (gliding div markers).
 import { api, apiReady } from './api.js';
 import { t, onLangChange } from './i18n.js';
 import { esc, badge, routeColor, textOn, nameOf, fmtDelay, delayClass, modeName, MODE_COLOR, clock, toast } from './util.js';
+import { createCanvasLayer } from './canvas-layer.js';
 
 const SOFIA = [42.6977, 23.3219];
 const VEHICLE_MODES = ['Tram', 'Trolleybus', 'Bus'];
 
-let map, renderer, stopLayer, overlay, vehLayer, pinLayer, selectedLayer, userMarker;
+let map, stopsCv, overlayCv, selectedCv, vehLayer, pinLayer, userMarker, hoverTip;
 const stops = [];
 const vehicles = new Map();
 const clickHandlers = [];
@@ -14,7 +15,9 @@ const listeners = new Set();
 const prefs = loadPrefs();
 let routeFilter = null;
 let lastVehicleData = null;
-let stopZoomBand = -1;
+let zooming = false;
+let vehiclesPending = false;
+let glideTimer;
 
 function loadPrefs() {
     try {
@@ -37,17 +40,31 @@ export function initMap() {
         maxZoom: 19, className: 'base-tiles',
     }).addTo(map);
 
-    renderer = L.canvas({ padding: 0.4 });
-    map.createPane('routes').style.zIndex = 420;
-    map.createPane('stopsPane').style.zIndex = 430;
-    stopLayer = L.layerGroup().addTo(map);
-    overlay = L.layerGroup().addTo(map);
-    selectedLayer = L.layerGroup().addTo(map);
+    stopsCv = createCanvasLayer(map, 'stopsPane', 430, { zoomStyle: stopZoomStyle });
+    overlayCv = createCanvasLayer(map, 'routePane', 440);
+    selectedCv = createCanvasLayer(map, 'selectedPane', 445);
     vehLayer = L.layerGroup().addTo(map);
     pinLayer = L.layerGroup().addTo(map);
+    hoverTip = L.tooltip({ direction: 'top', opacity: 1 });
 
-    map.on('zoomend', () => { updateZoomClass(); renderStops(); });
-    map.on('click', e => clickHandlers.at(-1)?.(e.latlng));
+    map.on('zoomstart', () => {
+        zooming = true;
+        stopVehicleGlide();
+    });
+    map.on('zoomanim', e => updateZoomClass(e.zoom));
+    map.on('zoom', () => { if (!map._animatingZoom) updateZoomClass(); });
+    map.on('zoomend', () => {
+        zooming = false;
+        updateZoomClass();
+        if (vehiclesPending && lastVehicleData) { vehiclesPending = false; applyVehicles(lastVehicleData); }
+    });
+    map.on('mousemove', e => showHover(hitPoint(e.containerPoint)));
+    map.on('mouseout zoomstart movestart', () => showHover(null));
+    map.on('click', e => {
+        const hit = hitPoint(e.containerPoint);
+        if (hit?.point.onClick) hit.point.onClick();
+        else clickHandlers.at(-1)?.(e.latlng);
+    });
     updateZoomClass();
 
     document.getElementById('locateBtn').addEventListener('click', () => locate().catch(() => {}));
@@ -63,11 +80,30 @@ export function initMap() {
     });
     renderLayersMenu();
     renderLegend();
-    onLangChange(() => { renderLayersMenu(); renderLegend(); renderStops(true); if (lastVehicleData) applyVehicles(lastVehicleData); });
+    onLangChange(() => { renderLayersMenu(); renderLegend(); renderStops(); if (lastVehicleData) applyVehicles(lastVehicleData); });
 }
 
-function updateZoomClass() {
-    map.getContainer().classList.toggle('zoom-far', map.getZoom() < 14);
+function updateZoomClass(zoom = map.getZoom()) {
+    map.getContainer().classList.toggle('zoom-far', zoom < 14);
+}
+
+// Stops fade in around zoom 14 and grow continuously, so zooming never pops them in or resizes them in steps.
+function stopZoomStyle(z) {
+    if (z < 13.4) return null;
+    const grow = Math.min(1, Math.max(0, (z - 14) / 2));
+    return { alpha: Math.min(1, (z - 13.4) / 0.6), scale: 0.55 + 0.45 * grow };
+}
+
+function hitPoint(cp) {
+    return overlayCv.hit(cp) || stopsCv.hit(cp);
+}
+
+function showHover(hit) {
+    map.getContainer().style.cursor = hit?.point.onClick ? 'pointer' : '';
+    if (!hit) { if (map.hasLayer(hoverTip)) hoverTip.remove(); return; }
+    hoverTip.options.offset = [0, -Math.round(hit.radius + 2)];
+    hoverTip.setLatLng([hit.point.lat, hit.point.lon]).setContent(hit.point.tip);
+    if (!map.hasLayer(hoverTip)) hoverTip.addTo(map);
 }
 
 // ---------- Layers menu & legend ----------
@@ -84,7 +120,7 @@ function renderLayersMenu() {
         if (input.dataset.layer) prefs[input.dataset.layer] = input.checked;
         if (input.dataset.mode) input.checked ? prefs.modes.add(input.dataset.mode) : prefs.modes.delete(input.dataset.mode);
         savePrefs();
-        renderStops(true);
+        renderStops();
         if (lastVehicleData) applyVehicles(lastVehicleData);
     }));
 }
@@ -101,39 +137,30 @@ export async function loadStops() {
     const data = await apiReady('stations', { params: { limit: 5000 } }, 60);
     stops.length = 0;
     stops.push(...data);
-    renderStops(true);
+    renderStops();
     return stops;
 }
 
 export const allStops = () => stops;
 
-function renderStops(force = false) {
+function renderStops() {
     if (!map) return;
-    const z = map.getZoom();
-    const band = !prefs.stops || z < 14 ? 0 : z < 16 ? 1 : 2;
-    if (!force && band === stopZoomBand) return;
-    stopZoomBand = band;
-    stopLayer.clearLayers();
-    if (band === 0) return;
-    for (const s of stops) {
-        if (!s.modes.some(m => prefs.modes.has(m))) continue;
-        const color = MODE_COLOR[s.mode] ?? MODE_COLOR.Unknown;
-        const marker = L.circleMarker([s.lat, s.lon], {
-            renderer, pane: 'stopsPane',
-            radius: band === 1 ? 3.5 : 6,
-            color, weight: band === 1 ? 1.5 : 2.5, fillColor: '#fff', fillOpacity: 1,
-        });
-        marker.bindTooltip(`${esc(nameOf(s))} <span style="color:#5B6472">#${esc(s.code)}</span>`, { direction: 'top', offset: [0, -6] });
-        marker.on('click', e => { L.DomEvent.stop(e); location.hash = `#/stop/${encodeURIComponent(s.id)}`; });
-        stopLayer.addLayer(marker);
-    }
+    const points = !prefs.stops ? [] : stops.filter(s => s.modes.some(m => prefs.modes.has(m))).map(s => ({
+        lat: s.lat, lon: s.lon, r: 6, w: 2.5,
+        color: MODE_COLOR[s.mode] ?? MODE_COLOR.Unknown, fill: '#fff',
+        interactive: true,
+        tip: `${esc(nameOf(s))} <span style="color:#5B6472">#${esc(s.code)}</span>`,
+        onClick: () => { location.hash = `#/stop/${encodeURIComponent(s.id)}`; },
+    }));
+    stopsCv.set({ points });
 }
 
 export function selectStop(stop) {
-    selectedLayer.clearLayers();
-    if (!stop) return;
-    L.circleMarker([stop.lat, stop.lon], { radius: 11, color: '#2B3C8F', weight: 3, fillColor: '#fff', fillOpacity: .9, pane: 'stopsPane' }).addTo(selectedLayer);
-    L.circleMarker([stop.lat, stop.lon], { radius: 4, color: '#2B3C8F', weight: 0, fillColor: '#2B3C8F', fillOpacity: 1, pane: 'stopsPane' }).addTo(selectedLayer);
+    if (!stop) { selectedCv.set(); return; }
+    selectedCv.set({ points: [
+        { lat: stop.lat, lon: stop.lon, r: 11, w: 3, color: '#2B3C8F', fill: '#fff', fillAlpha: .9 },
+        { lat: stop.lat, lon: stop.lon, r: 4, w: 0, fill: '#2B3C8F' },
+    ] });
     const target = L.latLng(stop.lat, stop.lon);
     if (!map.getBounds().pad(-0.15).contains(target) || map.getZoom() < 15) map.flyTo(target, Math.max(map.getZoom(), 16), { duration: .6 });
 }
@@ -164,9 +191,20 @@ function vehicleHtml(v) {
         + (late ? `<i class="late ${late}"></i>` : '') + '</div>';
 }
 
+function stopVehicleGlide() {
+    clearTimeout(glideTimer);
+    map.getContainer().classList.remove('vehicle-glide');
+}
+
 function applyVehicles(data, instant = false) {
+    // Moving markers mid-zoom fights Leaflet's zoom transition; the latest data is applied when the zoom settles.
+    if (zooming) { vehiclesPending = true; return; }
     const container = map.getContainer();
-    if (instant) container.classList.add('no-glide');
+    stopVehicleGlide();
+    if (!instant) {
+        container.classList.add('vehicle-glide');
+        glideTimer = setTimeout(stopVehicleGlide, 1600);
+    }
     const seen = new Set();
     for (const v of data.vehicles) {
         const visible = prefs.vehicles && prefs.modes.has(v.mode) && (!routeFilter || v.routeId === routeFilter);
@@ -194,7 +232,6 @@ function applyVehicles(data, instant = false) {
     for (const [id, entry] of vehicles) {
         if (!seen.has(id)) { vehLayer.removeLayer(entry.marker); vehicles.delete(id); }
     }
-    if (instant) requestAnimationFrame(() => container.classList.remove('no-glide'));
 }
 
 function vehiclePopup(v) {
@@ -216,49 +253,45 @@ function vehiclePopup(v) {
 }
 
 // ---------- Overlays ----------
-export function clearOverlay() { overlay.clearLayers(); map.getContainer().classList.remove('focus'); }
-
-function line(points, color, weight, extra = {}) {
-    return L.polyline(points, { color, weight, opacity: 1, lineJoin: 'round', lineCap: 'round', pane: 'routes', ...extra });
-}
+export function clearOverlay() { overlayCv.set(); map.getContainer().classList.remove('focus'); }
 
 export function drawRoute(route, direction, onStopClick) {
-    overlay.clearLayers();
     map.getContainer().classList.remove('focus');
     const color = routeColor(route);
-    line(direction.shape, '#fff', 9).addTo(overlay);
-    const poly = line(direction.shape, color, 5).addTo(overlay);
-    direction.stops.forEach((s, i) => {
+    const points = direction.stops.map((s, i) => {
         const end = i === 0 || i === direction.stops.length - 1;
-        const m = L.circleMarker([s.lat, s.lon], { pane: 'stopsPane', radius: end ? 7 : 5, color, weight: 3, fillColor: end ? color : '#fff', fillOpacity: 1 });
-        m.bindTooltip(esc(nameOf(s)), { direction: 'top', offset: [0, -6] });
-        m.on('click', e => { L.DomEvent.stop(e); onStopClick?.(s); });
-        m.addTo(overlay);
+        return {
+            lat: s.lat, lon: s.lon, r: end ? 7 : 5, w: 3, color, fill: end ? color : '#fff',
+            interactive: true, tip: esc(nameOf(s)), onClick: () => onStopClick?.(s),
+        };
     });
-    fit(poly.getBounds());
+    overlayCv.set({ lines: [{ pts: direction.shape, color: '#fff', w: 9 }, { pts: direction.shape, color, w: 5 }], points });
+    if (direction.shape.length) fit(L.latLngBounds(direction.shape));
 }
 
 export function drawJourney(journey) {
-    overlay.clearLayers();
     map.getContainer().classList.add('focus');
     const bounds = L.latLngBounds([]);
+    const lines = [];
+    const points = [];
     for (const leg of journey.legs) {
         const pts = leg.geometry?.length ? leg.geometry : [[leg.from.lat, leg.from.lon], [leg.to.lat, leg.to.lon]];
         pts.forEach(p => bounds.extend(p));
         if (leg.type === 'walk') {
-            line(pts, '#4B5563', 4, { dashArray: '1 9' }).addTo(overlay);
+            lines.push({ pts, color: '#4B5563', w: 4, dash: [1, 9] });
         } else {
             const color = routeColor(leg.route);
-            line(pts, '#fff', 10).addTo(overlay);
-            line(pts, color, 6).addTo(overlay);
+            lines.push({ pts, color: '#fff', w: 10 }, { pts, color, w: 6 });
             (leg.stops || []).forEach((s, i, arr) => {
                 const end = i === 0 || i === arr.length - 1;
-                L.circleMarker([s.lat, s.lon], { pane: 'stopsPane', radius: end ? 6 : 3.5, color, weight: end ? 3 : 2, fillColor: '#fff', fillOpacity: 1 })
-                    .bindTooltip(`${esc(nameOf(s))} · ${esc(clock(s.time))}`, { direction: 'top', offset: [0, -4] })
-                    .addTo(overlay);
+                points.push({
+                    lat: s.lat, lon: s.lon, r: end ? 6 : 3.5, w: end ? 3 : 2, color, fill: '#fff',
+                    interactive: true, tip: `${esc(nameOf(s))} · ${esc(clock(s.time))}`,
+                });
             });
         }
     }
+    overlayCv.set({ lines, points });
     if (bounds.isValid()) fit(bounds);
 }
 

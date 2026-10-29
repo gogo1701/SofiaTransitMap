@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'sofia-transit-shell-v1';
+const SHELL_CACHE = 'sofia-transit-shell-v2';
 const RUNTIME_CACHE = 'sofia-transit-runtime-v1';
 const SHELL_FILES = [
     '/',
@@ -8,6 +8,7 @@ const SHELL_FILES = [
     '/js/app.js',
     '/js/api.js',
     '/js/autocomplete.js',
+    '/js/canvas-layer.js',
     '/js/i18n.js',
     '/js/map.js',
     '/js/util.js',
