@@ -70,7 +70,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseResponseCompression();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // Unversioned ES modules: always revalidate (ETag) so deploys are picked up immediately.
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache"
+});
 app.MapControllers();
 
 app.Run();

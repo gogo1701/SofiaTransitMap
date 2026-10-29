@@ -3,6 +3,7 @@ import { api, apiReady } from './api.js';
 import { t, onLangChange } from './i18n.js';
 import { esc, badge, routeColor, textOn, nameOf, fmtDelay, delayClass, modeName, MODE_COLOR, clock, toast } from './util.js';
 import { createCanvasLayer } from './canvas-layer.js';
+import { theme, onThemeChange, cssVar } from './theme.js';
 
 const SOFIA = [42.6977, 23.3219];
 const VEHICLE_MODES = ['Tram', 'Trolleybus', 'Bus'];
@@ -81,6 +82,7 @@ export function initMap() {
     renderLayersMenu();
     renderLegend();
     onLangChange(() => { renderLayersMenu(); renderLegend(); renderStops(); if (lastVehicleData) applyVehicles(lastVehicleData); });
+    onThemeChange(() => { renderLayersMenu(); renderLegend(); renderStops(); drawSelected(); paintOverlay?.(); if (lastVehicleData) applyVehicles(lastVehicleData, true); });
 }
 
 function updateZoomClass(zoom = map.getZoom()) {
@@ -128,7 +130,7 @@ function renderLayersMenu() {
 function renderLegend() {
     document.getElementById('mapLegend').innerHTML =
         VEHICLE_MODES.concat('Metro').map(m => `<span><i style="background:${MODE_COLOR[m]}"></i>${esc(modeName(m))}</span>`).join('') +
-        `<span><i style="background:#F59E0B"></i>${esc(t('legend.late3'))}</span><span><i style="background:#B91C1C"></i>${esc(t('legend.late10'))}</span>` +
+        `<span><i style="background:#F59E0B"></i>${esc(t('legend.late3'))}</span><span><i style="background:var(--bad)"></i>${esc(t('legend.late10'))}</span>` +
         `<span><i class="sched"></i>${esc(t('legend.scheduled'))}</span>`;
 }
 
@@ -145,22 +147,36 @@ export const allStops = () => stops;
 
 function renderStops() {
     if (!map) return;
+    const fill = cssVar('--paper');
     const points = !prefs.stops ? [] : stops.filter(s => s.modes.some(m => prefs.modes.has(m))).map(s => ({
         lat: s.lat, lon: s.lon, r: 6, w: 2.5,
-        color: MODE_COLOR[s.mode] ?? MODE_COLOR.Unknown, fill: '#fff',
+        color: mapColor(MODE_COLOR[s.mode] ?? MODE_COLOR.Unknown), fill,
         interactive: true,
-        tip: `${esc(nameOf(s))} <span style="color:#5B6472">#${esc(s.code)}</span>`,
+        tip: `${esc(nameOf(s))} <span class="muted">#${esc(s.code)}</span>`,
         onClick: () => { location.hash = `#/stop/${encodeURIComponent(s.id)}`; },
     }));
     stopsCv.set({ points });
 }
 
-export function selectStop(stop) {
-    if (!stop) { selectedCv.set(); return; }
+// Navy (metro, selection) has too little contrast on the dark base map; lift it there.
+function mapColor(c) {
+    return theme() === 'dark' && c.toUpperCase() === '#2B3C8F' ? '#8C9BEA' : c;
+}
+
+let selected = null;
+function drawSelected() {
+    if (!selected) { selectedCv.set(); return; }
+    const ring = mapColor('#2B3C8F');
     selectedCv.set({ points: [
-        { lat: stop.lat, lon: stop.lon, r: 11, w: 3, color: '#2B3C8F', fill: '#fff', fillAlpha: .9 },
-        { lat: stop.lat, lon: stop.lon, r: 4, w: 0, fill: '#2B3C8F' },
+        { lat: selected.lat, lon: selected.lon, r: 11, w: 3, color: ring, fill: cssVar('--paper'), fillAlpha: .9 },
+        { lat: selected.lat, lon: selected.lon, r: 4, w: 0, fill: ring },
     ] });
+}
+
+export function selectStop(stop) {
+    selected = stop || null;
+    drawSelected();
+    if (!stop) return;
     const target = L.latLng(stop.lat, stop.lon);
     if (!map.getBounds().pad(-0.15).contains(target) || map.getZoom() < 15) map.flyTo(target, Math.max(map.getZoom(), 16), { duration: .6 });
 }
@@ -253,48 +269,62 @@ function vehiclePopup(v) {
 }
 
 // ---------- Overlays ----------
-export function clearOverlay() { overlayCv.set(); map.getContainer().classList.remove('focus'); }
+// Kept as a function so a theme switch can repaint the current route or journey in the new colours.
+let paintOverlay = null;
+
+export function clearOverlay() { paintOverlay = null; overlayCv.set(); map.getContainer().classList.remove('focus'); }
 
 export function drawRoute(route, direction, onStopClick) {
     map.getContainer().classList.remove('focus');
-    const color = routeColor(route);
-    const points = direction.stops.map((s, i) => {
-        const end = i === 0 || i === direction.stops.length - 1;
-        return {
-            lat: s.lat, lon: s.lon, r: end ? 7 : 5, w: 3, color, fill: end ? color : '#fff',
-            interactive: true, tip: esc(nameOf(s)), onClick: () => onStopClick?.(s),
-        };
-    });
-    overlayCv.set({ lines: [{ pts: direction.shape, color: '#fff', w: 9 }, { pts: direction.shape, color, w: 5 }], points });
+    const color = mapColor(routeColor(route));
+    paintOverlay = () => {
+        const casing = cssVar('--map-casing');
+        const paper = cssVar('--paper');
+        const points = direction.stops.map((s, i) => {
+            const end = i === 0 || i === direction.stops.length - 1;
+            return {
+                lat: s.lat, lon: s.lon, r: end ? 7 : 5, w: 3, color, fill: end ? color : paper,
+                interactive: true, tip: esc(nameOf(s)), onClick: () => onStopClick?.(s),
+            };
+        });
+        overlayCv.set({ lines: [{ pts: direction.shape, color: casing, w: 9 }, { pts: direction.shape, color, w: 5 }], points });
+    };
+    paintOverlay();
     if (direction.shape.length) fit(L.latLngBounds(direction.shape));
 }
 
 export function drawJourney(journey) {
     map.getContainer().classList.add('focus');
     const bounds = L.latLngBounds([]);
-    const lines = [];
-    const points = [];
-    for (const leg of journey.legs) {
-        const pts = leg.geometry?.length ? leg.geometry : [[leg.from.lat, leg.from.lon], [leg.to.lat, leg.to.lon]];
-        pts.forEach(p => bounds.extend(p));
-        if (leg.type === 'walk') {
-            lines.push({ pts, color: '#4B5563', w: 4, dash: [1, 9] });
-        } else {
-            const color = routeColor(leg.route);
-            lines.push({ pts, color: '#fff', w: 10 }, { pts, color, w: 6 });
+    journey.legs.forEach(leg => legPoints(leg).forEach(p => bounds.extend(p)));
+    paintOverlay = () => {
+        const casing = cssVar('--map-casing');
+        const paper = cssVar('--paper');
+        const lines = [];
+        const points = [];
+        for (const leg of journey.legs) {
+            const pts = legPoints(leg);
+            if (leg.type === 'walk') {
+                lines.push({ pts, color: cssVar('--map-walk'), w: 4, dash: [1, 9] });
+                continue;
+            }
+            const color = mapColor(routeColor(leg.route));
+            lines.push({ pts, color: casing, w: 10 }, { pts, color, w: 6 });
             (leg.stops || []).forEach((s, i, arr) => {
                 const end = i === 0 || i === arr.length - 1;
                 points.push({
-                    lat: s.lat, lon: s.lon, r: end ? 6 : 3.5, w: end ? 3 : 2, color, fill: '#fff',
+                    lat: s.lat, lon: s.lon, r: end ? 6 : 3.5, w: end ? 3 : 2, color, fill: paper,
                     interactive: true, tip: `${esc(nameOf(s))} · ${esc(clock(s.time))}`,
                 });
             });
         }
-    }
-    overlayCv.set({ lines, points });
+        overlayCv.set({ lines, points });
+    };
+    paintOverlay();
     if (bounds.isValid()) fit(bounds);
 }
 
+const legPoints = leg => leg.geometry?.length ? leg.geometry : [[leg.from.lat, leg.from.lon], [leg.to.lat, leg.to.lon]];
 export function fit(bounds) {
     const mobile = window.matchMedia('(max-width: 860px)').matches;
     map.fitBounds(bounds, {

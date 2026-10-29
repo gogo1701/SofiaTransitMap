@@ -96,7 +96,10 @@ export const nameOf = (o, field = 'name') => prettyName(lang() === 'en' ? (o?.[f
 
 // ---------- Modes and badges ----------
 export const MODES = ['Metro', 'Tram', 'Trolleybus', 'Bus'];
-export const MODE_COLOR = { Metro: '#2B3C8F', Tram: '#F7941D', Trolleybus: '#27AAE1', Bus: '#BE1E2D', Unknown: '#6B7280' };
+export const MODE_COLOR = {
+    // Navy disappears on the dark map; lift it there.
+    get Metro() { return document.documentElement.dataset.theme === 'dark' ? '#8C9BEA' : '#2B3C8F'; },
+    Tram: '#F7941D', Trolleybus: '#27AAE1', Bus: '#BE1E2D', Unknown: '#6B7280' };
 export const modeName = (mode, plural = false) => t(`mode.${mode}${plural ? '.pl' : ''}`);
 
 /** Pick ink or white text for a badge background so line numbers keep ≥4.5:1 contrast. */

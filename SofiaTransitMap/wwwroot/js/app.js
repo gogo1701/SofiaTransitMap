@@ -1,6 +1,7 @@
 // App shell: hash router, live polling, language switch and the mobile bottom sheet.
 import { api } from './api.js';
 import { t, setLang, applyStatic, onLangChange } from './i18n.js';
+import { initTheme, onThemeChange } from './theme.js';
 import * as M from './map.js';
 import { renderHome, renderStop } from './views/home.js';
 import { renderPlanner } from './views/planner.js';
@@ -136,6 +137,9 @@ function initSheet() {
 
 // ---------- Boot ----------
 applyStatic();
+initTheme();
+// Charts and route badges bake colours in when drawn, so the current view re-renders on a theme switch.
+onThemeChange(() => navigate());
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(err => console.error('Service worker registration failed', err));
 }

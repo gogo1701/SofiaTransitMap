@@ -1,6 +1,7 @@
 // Punctuality statistics: live network state plus history aggregated from the SQLite snapshots.
 import { api } from '../api.js';
 import { t, lang } from '../i18n.js';
+import { theme } from '../theme.js';
 import { esc, badge, MODES, MODE_COLOR, modeName, routeColor, stateBlock, errorText, clock, dateTime, shortDate, fmtNum, fmtPct, fmtMin, toast } from '../util.js';
 
 const RANGES = [
@@ -33,12 +34,13 @@ export function renderStats(root, { params, signal }) {
     C.defaults.borderColor = css('--line') || '#E5E7EB';
     C.defaults.plugins.legend.labels.boxWidth = 10;
     C.defaults.plugins.legend.labels.boxHeight = 10;
-    C.defaults.plugins.tooltip.backgroundColor = '#111827';
+    C.defaults.plugins.tooltip.backgroundColor = theme() === 'dark' ? '#2A3245' : '#111827';
     C.defaults.plugins.tooltip.padding = 10;
     C.defaults.plugins.tooltip.cornerRadius = 4;
     C.defaults.animation = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? false : { duration: 300 };
 
-    const NAVY = css('--navy') || '#2B3C8F';
+    const NAVY = css('--accent') || '#2B3C8F';
+    const NAVY_SOFT = theme() === 'dark' ? '#6F7BB5' : '#8C95C2';
     const WARN = css('--warn') || '#B45309';
     const BAD = css('--bad') || '#B91C1C';
     const OK = css('--ok') || '#15803D';
@@ -224,8 +226,8 @@ export function renderStats(root, { params, signal }) {
                     labels: series.points.map(p => timeLabel(p.t, hours)),
                     datasets: [
                         { type: 'line', label: t('stats.avgDelayMin'), data: series.points.map(p => +(p.avgDelaySec / 60).toFixed(2)), borderColor: NAVY, backgroundColor: NAVY, borderWidth: 2, pointRadius: 0, tension: .25, yAxisID: 'y' },
-                        { type: 'line', label: t('stats.p90Min'), data: series.points.map(p => +(p.p90DelaySec / 60).toFixed(2)), borderColor: '#8C95C2', borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0, tension: .25, yAxisID: 'y' },
-                        { type: 'bar', label: t('stats.delayedVehicles'), data: series.points.map(p => p.delayed), backgroundColor: 'rgba(180, 83, 9, .28)', yAxisID: 'y1', barPercentage: 1, categoryPercentage: 1 },
+                        { type: 'line', label: t('stats.p90Min'), data: series.points.map(p => +(p.p90DelaySec / 60).toFixed(2)), borderColor: NAVY_SOFT, borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0, tension: .25, yAxisID: 'y' },
+                        { type: 'bar', label: t('stats.delayedVehicles'), data: series.points.map(p => p.delayed), backgroundColor: WARN + '47', yAxisID: 'y1', barPercentage: 1, categoryPercentage: 1 },
                     ],
                 },
                 options: {
@@ -370,7 +372,7 @@ export function renderStats(root, { params, signal }) {
                     labels: d.points.map(p => timeLabel(p.t, hours)),
                     datasets: [
                         { type: 'line', label: t('stats.avgDelayMin'), data: d.points.map(p => +(p.avgDelaySec / 60).toFixed(2)), borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0, tension: .25, yAxisID: 'y' },
-                        { type: 'bar', label: t('stats.vehicles'), data: d.points.map(p => p.vehicles), backgroundColor: 'rgba(43, 60, 143, .14)', yAxisID: 'y1', barPercentage: 1, categoryPercentage: 1 },
+                        { type: 'bar', label: t('stats.vehicles'), data: d.points.map(p => p.vehicles), backgroundColor: NAVY + (theme() === 'dark' ? '33' : '24'), yAxisID: 'y1', barPercentage: 1, categoryPercentage: 1 },
                     ],
                 },
                 options: {
