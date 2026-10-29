@@ -69,6 +69,37 @@ namespace SofiaTransitMap.Controllers
             return 0;
         }
 
+        /// <summary>Metro station street entrances/exits, with the platform stop they lead to.</summary>
+        [HttpGet("entrances")]
+        public IActionResult Entrances()
+        {
+            var feed = _store.Require();
+            Response.Headers.CacheControl = "public, max-age=3600";
+            return Ok(feed.StationEntrances.SelectMany(kv => EntranceDtos(feed, kv.Key)));
+        }
+
+        private static IEnumerable<object> EntranceDtos(GtfsFeed feed, int station)
+        {
+            if (!feed.StationEntrances.TryGetValue(station, out var list)) yield break;
+            var st = feed.Stops[station];
+            var platform = feed.Stops.FirstOrDefault(s => s.ParentId == st.Id && s.IsServed && s.LocationType == 0);
+            foreach (var i in list)
+            {
+                var e = feed.Stops[i];
+                yield return new
+                {
+                    id = e.Id,
+                    name = e.Name,
+                    nameEn = e.NameEn,
+                    lat = Math.Round(e.Lat, 6),
+                    lon = Math.Round(e.Lon, 6),
+                    stationName = st.Name,
+                    stationNameEn = st.NameEn,
+                    stopId = platform?.Id ?? st.Id,
+                };
+            }
+        }
+
         [HttpGet("{id}")]
         public IActionResult GetStop(string id)
         {
@@ -79,7 +110,9 @@ namespace SofiaTransitMap.Controllers
                 .OrderBy(r => GtfsLoader.ModePriority(r.Mode)).ThenBy(r => RoutesController.SortKey(r.ShortName))
                 .Select(RouteDto.From)
                 .ToList();
-            return Ok(new { stop = StopDto.From(stop), routes });
+            var station = stop.LocationType == 1 ? stop.Index : stop.ParentId != null && feed.StopIndex.TryGetValue(stop.ParentId, out var p) ? p : -1;
+            var entrances = station >= 0 ? EntranceDtos(feed, station).ToList() : new List<object>();
+            return Ok(new { stop = StopDto.From(stop), routes, entrances });
         }
 
         /// <summary>Upcoming departures, merging the timetable with live predictions.</summary>

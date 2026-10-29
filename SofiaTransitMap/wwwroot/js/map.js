@@ -9,8 +9,9 @@ import { shapeFor, requestShape, project, pointAt } from './route-track.js';
 const SOFIA = [42.6977, 23.3219];
 const VEHICLE_MODES = ['Tram', 'Trolleybus', 'Bus'];
 
-let map, stopsCv, overlayCv, selectedCv, vehLayer, pinLayer, userMarker, hoverTip;
+let map, stopsCv, entranceCv, overlayCv, selectedCv, vehLayer, pinLayer, userMarker, hoverTip;
 const stops = [];
+let entrances = [];
 const vehicles = new Map();
 const clickHandlers = [];
 const listeners = new Set();
@@ -26,7 +27,7 @@ const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 // Dead reckoning: between feed updates (every ~20 s) live vehicles keep moving at their reported speed, along
 // their trip's route line when it is known (straight along the bearing otherwise); when a real position arrives
 // the marker blends into it instead of jumping. Set PREDICT_MOTION to false to show reported positions only.
-const PREDICT_MOTION = true;
+const PREDICT_MOTION = false;
 const PREDICT_MAX_MS = 25_000;
 const CORRECT_MS = 1500;
 const M_PER_DEG = 111_320;
@@ -54,6 +55,7 @@ export function initMap() {
     }).addTo(map);
 
     stopsCv = createCanvasLayer(map, 'stopsPane', 430, { zoomStyle: stopZoomStyle });
+    entranceCv = createCanvasLayer(map, 'entrancePane', 435, { zoomStyle: entranceZoomStyle });
     overlayCv = createCanvasLayer(map, 'routePane', 440);
     selectedCv = createCanvasLayer(map, 'selectedPane', 445);
     vehLayer = L.layerGroup().addTo(map);
@@ -91,6 +93,7 @@ export function initMap() {
     });
     renderLayersMenu();
     renderLegend();
+    loadEntrances();
     onLangChange(() => { renderLayersMenu(); renderLegend(); renderStops(); if (lastVehicleData) applyVehicles(lastVehicleData); });
     onThemeChange(() => { renderLayersMenu(); renderLegend(); renderStops(); drawSelected(); paintOverlay?.(); if (lastVehicleData) applyVehicles(lastVehicleData, true); });
 }
@@ -106,8 +109,14 @@ function stopZoomStyle(z) {
     return { alpha: Math.min(1, (z - 13.4) / 0.6), scale: 0.55 + 0.45 * grow };
 }
 
+// Metro exits only matter at street level: they fade in from zoom 15.6, after the stops.
+function entranceZoomStyle(z) {
+    if (z < 15.6) return null;
+    return { alpha: Math.min(1, (z - 15.6) / 0.5), scale: 0.8 + 0.2 * Math.min(1, Math.max(0, (z - 16) / 2)) };
+}
+
 function hitPoint(cp) {
-    return overlayCv.hit(cp) || stopsCv.hit(cp);
+    return overlayCv.hit(cp) || entranceCv.hit(cp) || stopsCv.hit(cp);
 }
 
 function showHover(hit) {
@@ -166,6 +175,35 @@ function renderStops() {
         onClick: () => { location.hash = `#/stop/${encodeURIComponent(s.id)}`; },
     }));
     stopsCv.set({ points });
+    renderEntrances();
+}
+
+// ---------- Metro entrances ----------
+async function loadEntrances() {
+    try { entrances = await apiReady('stations/entrances', {}, 60); } catch { entrances = []; }
+    renderEntrances();
+}
+
+export const entranceTip = e => `<b>${esc(nameOf(e))}</b><br><span class="muted">${esc(modeName('Metro'))} ${esc(nameOf(e, 'stationName'))}</span>`;
+
+const exitSign = (e, extra = {}) => ({
+    lat: e.lat, lon: e.lon, r: 7, w: 1.5, shape: 'square', label: 'M', labelColor: cssVar('--paper'),
+    fill: mapColor(MODE_COLOR.Metro), color: cssVar('--paper'), interactive: true, tip: entranceTip(e), ...extra,
+});
+
+function renderEntrances() {
+    if (!map) return;
+    const show = prefs.stops && prefs.modes.has('Metro');
+    entranceCv.set({ points: !show ? [] : entrances.map(e => exitSign(e, {
+        onClick: () => { location.hash = `#/stop/${encodeURIComponent(e.stopId)}`; },
+    })) });
+}
+
+let focusedExit = null;
+export function focusEntrance(e) {
+    focusedExit = e;
+    drawSelected();
+    map.flyTo([e.lat, e.lon], Math.max(map.getZoom(), 18), { duration: .6 });
 }
 
 // Navy (metro, selection) has too little contrast on the dark base map; lift it there.
@@ -175,16 +213,20 @@ function mapColor(c) {
 
 let selected = null;
 function drawSelected() {
-    if (!selected) { selectedCv.set(); return; }
     const ring = mapColor('#2B3C8F');
-    selectedCv.set({ points: [
+    const points = [];
+    if (selected) points.push(
         { lat: selected.lat, lon: selected.lon, r: 11, w: 3, color: ring, fill: cssVar('--paper'), fillAlpha: .9 },
-        { lat: selected.lat, lon: selected.lon, r: 4, w: 0, fill: ring },
-    ] });
+        { lat: selected.lat, lon: selected.lon, r: 4, w: 0, fill: ring });
+    if (focusedExit) points.push(
+        { lat: focusedExit.lat, lon: focusedExit.lon, r: 15, w: 3, color: ring, fill: ring, fillAlpha: .18 },
+        exitSign(focusedExit, { r: 8, interactive: false }));
+    selectedCv.set({ points });
 }
 
 export function selectStop(stop) {
     selected = stop || null;
+    focusedExit = null;
     drawSelected();
     if (!stop) return;
     const target = L.latLng(stop.lat, stop.lon);
@@ -388,6 +430,9 @@ export function drawJourney(journey) {
             const pts = legPoints(leg);
             if (leg.type === 'walk') {
                 lines.push({ pts, color: cssVar('--map-walk'), w: 4, dash: [1, 9] });
+                if (leg.entrance) points.push(
+                    { lat: leg.entrance.lat, lon: leg.entrance.lon, r: 15, w: 2.5, color: mapColor(MODE_COLOR.Metro), fill: mapColor(MODE_COLOR.Metro), fillAlpha: .18 },
+                    exitSign(leg.entrance, { r: 8, w: 2, tip: `<b>${esc(nameOf(leg.entrance))}</b>` }));
                 continue;
             }
             const color = mapColor(routeColor(leg.route));

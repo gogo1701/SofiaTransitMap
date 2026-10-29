@@ -304,6 +304,13 @@ namespace SofiaTransitMap.Gtfs
                 LoadedAt = DateTimeOffset.UtcNow,
             };
 
+            foreach (var s in stops)
+            {
+                if (s.LocationType != 2 || s.ParentId == null || !stopIndex.TryGetValue(s.ParentId, out var station)) continue;
+                if (!feed.StationEntrances.TryGetValue(station, out var list)) feed.StationEntrances[station] = list = new List<int>();
+                list.Add(s.Index);
+            }
+
             BuildFootpaths(feed, open);
             return ReadFeedInfo(feed, open);
         }
@@ -360,9 +367,10 @@ namespace SofiaTransitMap.Gtfs
             foreach (var s in feed.Stops)
             {
                 if (!s.IsServed) continue;
-                foreach (var (other, meters) in feed.NearbyStops(s.Lat, s.Lon, radius))
+                foreach (var (other, _) in feed.NearbyStops(s.Lat, s.Lon, radius))
                 {
                     if (other == s.Index) continue;
+                    var (meters, _) = feed.WalkBetween(s.Index, other);
                     feed.Footpaths[s.Index].Add(new Footpath(other, Math.Max(60, Geo.WalkSeconds(meters))));
                 }
             }

@@ -79,11 +79,28 @@ export function createCanvasLayer(map, paneName, zIndex, { zoomStyle } = {}) {
                     const y = pt.p.y * k - oy;
                     sx[i] = x; sy[i] = y; sr[i] = r + w / 2;
                     if (x < -pad || y < -pad || x > width + pad || y > height + pad) continue;
-                    ctx.moveTo(x + r, y);
-                    ctx.arc(x, y, r, 0, TAU);
+                    if (g.shape === 'square') {
+                        ctx.moveTo(x + r, y);
+                        ctx.roundRect(x - r, y - r, r * 2, r * 2, r * 0.3);
+                    } else {
+                        ctx.moveTo(x + r, y);
+                        ctx.arc(x, y, r, 0, TAU);
+                    }
                 }
                 if (g.fill) { ctx.globalAlpha = style.alpha * g.fillAlpha; ctx.fillStyle = g.fill; ctx.fill(); }
                 if (g.w > 0 && g.color) { ctx.globalAlpha = style.alpha; ctx.strokeStyle = g.color; ctx.lineWidth = w; ctx.stroke(); }
+                if (g.label) {
+                    ctx.globalAlpha = style.alpha;
+                    ctx.fillStyle = g.labelColor || '#fff';
+                    ctx.font = `700 ${Math.round(r * 1.25)}px "Sofia Sans", system-ui, sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    for (const i of g.idx) {
+                        const x = sx[i], y = sy[i];
+                        if (x < -pad || y < -pad || x > width + pad || y > height + pad) continue;
+                        ctx.fillText(g.label, x, y + r * 0.06);
+                    }
+                }
             }
         }
         ctx.globalAlpha = 1;
@@ -148,9 +165,10 @@ export function createCanvasLayer(map, paneName, zIndex, { zoomStyle } = {}) {
             points = ps.map(pt => ({ ...pt, p: project(pt.lat, pt.lon) }));
             const byKey = new Map();
             points.forEach((pt, i) => {
-                const key = `${pt.color}|${pt.fill}|${pt.fillAlpha ?? 1}|${pt.r}|${pt.w ?? 0}`;
+                const key = `${pt.color}|${pt.fill}|${pt.fillAlpha ?? 1}|${pt.r}|${pt.w ?? 0}|${pt.shape ?? ''}|${pt.label ?? ''}|${pt.labelColor ?? ''}`;
                 let g = byKey.get(key);
-                if (!g) byKey.set(key, g = { color: pt.color, fill: pt.fill, fillAlpha: pt.fillAlpha ?? 1, r: pt.r, w: pt.w ?? 0, idx: [] });
+                if (!g) byKey.set(key, g = { color: pt.color, fill: pt.fill, fillAlpha: pt.fillAlpha ?? 1, r: pt.r, w: pt.w ?? 0,
+                    shape: pt.shape, label: pt.label, labelColor: pt.labelColor, idx: [] });
                 g.idx.push(i);
             });
             groups = [...byKey.values()];

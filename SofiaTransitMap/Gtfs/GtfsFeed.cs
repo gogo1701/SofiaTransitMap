@@ -131,6 +131,48 @@ namespace SofiaTransitMap.Gtfs
             }
         }
 
+        /// <summary>Street entrances (location_type 2) by station index. Platforms reach them through their parent station.</summary>
+        public Dictionary<int, List<int>> StationEntrances { get; } = new();
+
+        /// <summary>Extra walking for stairs/escalators between street level and a metro platform.</summary>
+        private const double VerticalMeters = 40;
+
+        public List<int>? EntrancesOf(int stop)
+        {
+            var s = Stops[stop];
+            var station = s.LocationType == 1 ? s.Index : s.ParentId != null && StopIndex.TryGetValue(s.ParentId, out var p) ? p : -1;
+            return station >= 0 && StationEntrances.TryGetValue(station, out var list) && list.Count > 0 ? list : null;
+        }
+
+        /// <summary>Walking distance from a street point to a stop, through the best station entrance when it has any.</summary>
+        public (double Meters, int Entrance) WalkTo(int stop, double lat, double lon)
+        {
+            var s = Stops[stop];
+            var entrances = EntrancesOf(stop);
+            if (entrances == null) return (Geo.DistanceMeters(lat, lon, s.Lat, s.Lon), -1);
+            var best = (Meters: double.MaxValue, Entrance: -1);
+            foreach (var e in entrances)
+            {
+                var en = Stops[e];
+                var m = Geo.DistanceMeters(lat, lon, en.Lat, en.Lon) + Geo.DistanceMeters(en.Lat, en.Lon, s.Lat, s.Lon) + VerticalMeters;
+                if (m < best.Meters) best = (m, e);
+            }
+            return best;
+        }
+
+        /// <summary>Walking between two stops. A metro platform is left/entered through a street entrance unless
+        /// both stops are underground (same or linked stations), where the passage is direct.</summary>
+        public (double Meters, int Entrance) WalkBetween(int a, int b)
+        {
+            var sa = Stops[a];
+            var sb = Stops[b];
+            var ea = EntrancesOf(a) != null;
+            var eb = EntrancesOf(b) != null;
+            if (ea && !eb) return WalkTo(a, sb.Lat, sb.Lon);
+            if (eb && !ea) return WalkTo(b, sa.Lat, sa.Lon);
+            return (Geo.DistanceMeters(sa.Lat, sa.Lon, sb.Lat, sb.Lon), -1);
+        }
+
         public GtfsStop? FindStop(string id) => StopIndex.TryGetValue(id, out var i) ? Stops[i] : null;
         public GtfsRoute? FindRoute(string id) => RouteIndex.TryGetValue(id, out var i) ? Routes[i] : null;
         public GtfsTrip? FindTrip(string id) => TripIndex.TryGetValue(id, out var i) ? Trips[i] : null;

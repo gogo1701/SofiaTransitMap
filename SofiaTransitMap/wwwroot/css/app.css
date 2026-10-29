@@ -478,6 +478,17 @@ button { cursor: pointer; }
 .stop-title h2 { font-size: 1.2rem; }
 .stop-code { font: 700 .85rem/1 var(--font-cond); color: var(--muted); background: var(--surface); border-radius: var(--radius); padding: 4px 6px; }
 .stop-lines { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+.exit-sign { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--metro); color: var(--paper); font: 700 .7rem/1 var(--font); }
+.exits { padding-top: 0; }
+.exits summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; font-size: .9rem; padding: 10px 0 2px; list-style: none; }
+.exits summary::-webkit-details-marker { display: none; }
+.exits summary::after { content: ""; margin-left: auto; width: 7px; height: 7px; border: solid var(--muted); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform .2s; }
+.exits[open] summary::after { transform: rotate(-135deg); }
+.exit-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.exit-row { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 9px 0 9px 24px; font: inherit; font-size: .88rem; color: var(--text); cursor: pointer; }
+.exit-row:hover, .exit-row:focus-visible { color: var(--accent); }
+.tl-exit { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; font-size: .85rem; line-height: 1.3; }
+.tl-exit .exit-sign { margin-top: 1px; }
 .refresh-note { display: flex; align-items: center; justify-content: space-between; font-size: .78rem; color: var(--muted); padding: 8px 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
 
 /* ---------- Planner ---------- */

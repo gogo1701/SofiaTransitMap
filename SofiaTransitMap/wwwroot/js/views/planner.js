@@ -246,6 +246,7 @@ function journeyItem(j, i) {
     </li>`;
 }
 
+
 function timeline(j) {
     const rows = j.legs.map(l => {
         if (l.type === 'walk') {
@@ -255,6 +256,7 @@ function timeline(j) {
                 <div class="tl-body">
                     <div class="tl-place">${esc(placeName(l.from))}</div>
                     <div class="tl-detail"><span class="walk-chip">${ICON.walk}</span>${esc(t('plan.walk'))} ${esc(fmtDuration(l.durationSec))} · ${esc(fmtMeters(l.distanceM))}</div>
+                    ${l.entrance ? `<div class="tl-exit"><span class="exit-sign" aria-hidden="true">M</span><span><span class="muted">${esc(t(l.entersMetro ? 'plan.enterVia' : 'plan.leaveVia'))}</span> ${esc(nameOf(l.entrance))}</span></div>` : ''}
                 </div>
             </li>`;
         }

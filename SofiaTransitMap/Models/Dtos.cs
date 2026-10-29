@@ -34,6 +34,10 @@ namespace SofiaTransitMap.Models
         public List<PlanStopCall>? Stops { get; init; }
         public List<double[]> Geometry { get; init; } = new();
         public int? DelaySec { get; init; }
+        /// <summary>Metro entrance the walk goes through, if it starts or ends underground.</summary>
+        public PlanPlace? Entrance { get; init; }
+        /// <summary>True when the walk goes into the metro through <see cref="Entrance"/>, false when it leaves it.</summary>
+        public bool? EntersMetro { get; init; }
     }
 
     public sealed record PlanJourney(DateTimeOffset Departure, DateTimeOffset Arrival, int DurationSec, int WalkMeters, int Transfers, List<PlanLeg> Legs);

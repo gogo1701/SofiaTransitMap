@@ -157,8 +157,16 @@ function renderHeader(root, info) {
                 <button type="button" class="btn btn-ghost btn-sm" data-plan="to">${esc(t('stop.planTo'))}</button>
             </div>
         </div>
+        ${info.entrances?.length ? `<details class="section exits">
+            <summary><span class="exit-sign" aria-hidden="true">M</span>${esc(t('stop.exits'))} <span class="muted">${info.entrances.length}</span></summary>
+            <ul class="exit-list">${info.entrances.map((e, i) => `<li><button type="button" class="exit-row" data-exit="${i}">${esc(nameOf(e))}</button></li>`).join('')}</ul>
+        </details>` : ''}
         <div class="refresh-note"><span>${esc(t('stop.departures'))}</span><span id="depUpdated"></span></div>
         <ul class="departures" id="depList"></ul>`;
+    root.querySelectorAll('[data-exit]').forEach(btn => btn.addEventListener('click', () => {
+        const e = info.entrances[Number(btn.dataset.exit)];
+        M.focusEntrance(e);
+    }));
     root.querySelectorAll('[data-plan]').forEach(btn => btn.addEventListener('click', () => {
         setPlannerPlace(btn.dataset.plan, { label: nameOf(s), detail: `#${s.code}`, lat: s.lat, lon: s.lon, kind: 'stop', stopId: s.id });
         location.hash = '#/plan';

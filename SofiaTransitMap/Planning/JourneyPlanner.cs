@@ -155,15 +155,18 @@ namespace SofiaTransitMap.Planning
         private static bool Same(PlanJourney a, PlanJourney b) =>
             a.Departure == b.Departure && a.Arrival == b.Arrival && a.Legs.Count == b.Legs.Count;
 
-        private static Dictionary<int, (int Seconds, double Meters)> NearestStops(GtfsFeed feed, double lat, double lon, int maxWalk)
+        private readonly record struct Walk(int Seconds, double Meters, int Entrance);
+
+        private static Dictionary<int, Walk> NearestStops(GtfsFeed feed, double lat, double lon, int maxWalk)
         {
-            var result = new Dictionary<int, (int, double)>();
+            var result = new Dictionary<int, Walk>();
             foreach (var radius in new[] { maxWalk, maxWalk * 2 })
             {
-                foreach (var (stop, meters) in feed.NearbyStops(lat, lon, radius))
+                foreach (var (stop, _) in feed.NearbyStops(lat, lon, radius))
                 {
                     if (feed.Stops[stop].LocationType != 0) continue;
-                    result[stop] = (Geo.WalkSeconds(meters), meters);
+                    var (meters, entrance) = feed.WalkTo(stop, lat, lon);
+                    result[stop] = new Walk(Geo.WalkSeconds(meters), meters, entrance);
                 }
                 if (result.Count > 0) break;
             }
@@ -172,7 +175,7 @@ namespace SofiaTransitMap.Planning
 
         private (PlanJourney Journey, int FirstBoardDep, int AccessSec)? Scan(
             GtfsFeed feed, Conn[] conns, DateOnly date, int start,
-            Dictionary<int, (int Seconds, double Meters)> access, Dictionary<int, (int Seconds, double Meters)> egress,
+            Dictionary<int, Walk> access, Dictionary<int, Walk> egress,
             PlanPlace origin, PlanPlace destination)
         {
             var nStops = feed.Stops.Count;
@@ -255,8 +258,9 @@ namespace SofiaTransitMap.Planning
             var firstBoard = conns[rides[0].Board];
             var accessSec = access[firstBoard.From].Seconds;
             var departure = SofiaClock.At(date, firstBoard.Dep - accessSec);
-            if (access[firstBoard.From].Meters > 30)
-                legs.Add(WalkLeg(origin, StopPlace(feed, firstBoard.From), departure, access[firstBoard.From].Meters));
+            var acc = access[firstBoard.From];
+            if (acc.Meters > 30)
+                legs.Add(WalkLeg(origin, StopPlace(feed, firstBoard.From), departure, acc.Meters, EntrancePlace(feed, acc.Entrance), enters: true));
 
             for (var k = 0; k < rides.Count; k++)
             {
@@ -267,19 +271,19 @@ namespace SofiaTransitMap.Planning
                     var thisBoard = conns[b];
                     if (prevAlight.To != thisBoard.From)
                     {
-                        var s1 = feed.Stops[prevAlight.To];
-                        var s2 = feed.Stops[thisBoard.From];
+                        var (meters, entrance) = feed.WalkBetween(prevAlight.To, thisBoard.From);
                         legs.Add(WalkLeg(StopPlace(feed, prevAlight.To), StopPlace(feed, thisBoard.From),
-                            SofiaClock.At(date, prevAlight.Arr), Geo.DistanceMeters(s1.Lat, s1.Lon, s2.Lat, s2.Lon)));
+                            SofiaClock.At(date, prevAlight.Arr), meters, EntrancePlace(feed, entrance),
+                            enters: entrance >= 0 && feed.EntrancesOf(thisBoard.From) != null));
                     }
                 }
                 legs.Add(RideLeg(feed, date, conns[b], conns[a]));
             }
 
             var last = conns[bestConn];
-            var eMeters = egress[bestStop].Meters;
-            if (eMeters > 30)
-                legs.Add(WalkLeg(StopPlace(feed, bestStop), destination, SofiaClock.At(date, last.Arr), eMeters));
+            var egw = egress[bestStop];
+            if (egw.Meters > 30)
+                legs.Add(WalkLeg(StopPlace(feed, bestStop), destination, SofiaClock.At(date, last.Arr), egw.Meters, EntrancePlace(feed, egw.Entrance), enters: false));
 
             var arrival = SofiaClock.At(date, bestArr);
             var walkMeters = (int)legs.Where(l => l.Type == "walk").Sum(l => l.DistanceM);
@@ -293,7 +297,14 @@ namespace SofiaTransitMap.Planning
             return new PlanPlace(s.Name, s.NameEn, s.Lat, s.Lon, s.Id, s.Code);
         }
 
-        private static PlanLeg WalkLeg(PlanPlace from, PlanPlace to, DateTimeOffset departure, double straightMeters)
+        private static PlanPlace? EntrancePlace(GtfsFeed feed, int entrance)
+        {
+            if (entrance < 0) return null;
+            var e = feed.Stops[entrance];
+            return new PlanPlace(e.Name, e.NameEn, e.Lat, e.Lon, e.Id);
+        }
+
+        private static PlanLeg WalkLeg(PlanPlace from, PlanPlace to, DateTimeOffset departure, double straightMeters, PlanPlace? entrance = null, bool enters = false)
         {
             var secs = Geo.WalkSeconds(straightMeters);
             return new PlanLeg
@@ -305,7 +316,11 @@ namespace SofiaTransitMap.Planning
                 Arrival = departure.AddSeconds(secs),
                 DurationSec = secs,
                 DistanceM = (int)(straightMeters * Geo.WalkDetourFactor),
-                Geometry = new List<double[]> { new[] { from.Lat, from.Lon }, new[] { to.Lat, to.Lon } },
+                Geometry = entrance == null
+                    ? new List<double[]> { new[] { from.Lat, from.Lon }, new[] { to.Lat, to.Lon } }
+                    : new List<double[]> { new[] { from.Lat, from.Lon }, new[] { entrance.Lat, entrance.Lon }, new[] { to.Lat, to.Lon } },
+                Entrance = entrance,
+                EntersMetro = entrance == null ? null : enters,
             };
         }
 
