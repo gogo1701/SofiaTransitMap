@@ -197,6 +197,69 @@ namespace SofiaTransitMap.Controllers
             }));
         }
 
+        [HttpGet("mode-lines")]
+        public async Task<IActionResult> ModeLines([FromQuery] int hours = 24, CancellationToken ct = default)
+        {
+            var since = Since(hours);
+            var samples = Math.Max(1, await _db.NetworkSnapshots.CountAsync(s => s.TimestampUtc >= since, ct));
+            var routeStats = await _db.RouteSnapshots.AsNoTracking()
+                .Where(s => s.TimestampUtc >= since)
+                .GroupBy(s => new { s.Mode, s.RouteId })
+                .Select(g => new
+                {
+                    mode = g.Key.Mode,
+                    routeId = g.Key.RouteId,
+                    samples = g.Count(),
+                    vehicles = g.Sum(r => r.Vehicles),
+                    tracked = g.Sum(r => r.Tracked),
+                    delayed = g.Sum(r => r.Delayed),
+                    sumDelay = g.Sum(r => r.SumDelaySec),
+                    maxDelay = g.Max(r => r.MaxDelaySec),
+                })
+                .ToListAsync(ct);
+
+            var modes = routeStats.GroupBy(r => r.mode)
+                .OrderBy(g => GtfsLoader.ModePriority(g.Key))
+                .Select(g =>
+                {
+                    var tracked = g.Sum(r => r.tracked);
+                    var delayed = g.Sum(r => r.delayed);
+                    return new
+                    {
+                        mode = g.Key,
+                        avgVehicles = Math.Round((double)g.Sum(r => r.vehicles) / samples, 1),
+                        avgDelayed = Math.Round((double)delayed / samples, 1),
+                        avgDelaySec = tracked == 0 ? 0 : Math.Round(g.Sum(r => r.sumDelay) / tracked, 1),
+                        delayedShare = tracked == 0 ? 0 : Math.Round((double)delayed / tracked, 4),
+                    };
+                })
+                .ToList();
+
+            var feed = _store.Current;
+            var lines = routeStats.Select(r =>
+                {
+                    var route = feed?.FindRoute(r.routeId);
+                    return new
+                    {
+                        r.routeId,
+                        shortName = route?.ShortName ?? r.routeId,
+                        mode = route?.Mode ?? r.mode,
+                        color = route?.Color ?? "6B7280",
+                        textColor = route?.TextColor ?? "FFFFFF",
+                        r.samples,
+                        avgVehicles = Math.Round((double)r.vehicles / r.samples, 1),
+                        avgDelaySec = r.tracked == 0 ? 0 : Math.Round(r.sumDelay / r.tracked, 1),
+                        delayedShare = r.tracked == 0 ? 0 : Math.Round((double)r.delayed / r.tracked, 4),
+                        maxDelaySec = r.maxDelay,
+                        tracked = r.tracked,
+                    };
+                })
+                .OrderByDescending(r => r.avgDelaySec)
+                .ToList();
+
+            return Ok(new { modes, lines });
+        }
+
         [HttpGet("lines")]
         public async Task<IActionResult> Lines([FromQuery] int hours = 24, [FromQuery] TransitType? mode = null, CancellationToken ct = default)
         {

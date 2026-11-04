@@ -22,6 +22,7 @@ export function renderStats(root, { params, signal }) {
     let selectedLine = params.id ? decodeURIComponent(params.id) : null;
     let lines = [];
     let liveTimer;
+    let historyController;
 
     if (!window.Chart) {
         root.innerHTML = `<div class="stats">${stateBlock({ title: t('error.title'), text: t('stats.noCharts'), kind: 'error' })}</div>`;
@@ -188,20 +189,40 @@ export function renderStats(root, { params, signal }) {
 
     // ---------- History ----------
     async function loadHistory() {
+        historyController?.abort();
+        historyController = new AbortController();
+        const historySignal = historyController.signal;
         const range = RANGES.find(r => r.key === rangeKey);
         const hours = range.hours;
         const days = Math.max(1, Math.ceil(hours / 24));
         root.querySelectorAll('[data-range]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === rangeKey)));
+
+        // Mode and line views share one database aggregation instead of scanning
+        // the route snapshots separately, and do not hold the network charts hostage.
+        api('stats/mode-lines', { params: { hours }, signal: historySignal })
+            .then(({ modes, lines: rows }) => {
+                if (historySignal.aborted) return;
+                lines = rows;
+                renderModes(modes);
+                renderLines();
+                if (selectedLine) loadLineDetail(selectedLine, historySignal);
+            })
+            .catch(err => {
+                if (err.name !== 'AbortError' && !historySignal.aborted) {
+                    $('#modeBars').innerHTML = stateBlock({ title: t('error.title'), text: errorText(err), kind: 'error' });
+                    emptyChart('cLines', errorText(err));
+                    $('#lineTable').innerHTML = stateBlock({ title: t('error.title'), text: errorText(err), kind: 'error' });
+                }
+            });
+
         try {
-            const [summary, series, hourly, weekday, modes, lineRows] = await Promise.all([
-                api('stats/summary', { params: { hours }, signal }),
-                api('stats/timeseries', { params: { hours }, signal }),
-                api('stats/hourly', { params: { days }, signal }),
-                api('stats/weekday', { params: { days: Math.max(7, days) }, signal }),
-                api('stats/modes', { params: { hours }, signal }),
-                api('stats/lines', { params: { hours }, signal }),
+            const [summary, series, hourly, weekday] = await Promise.all([
+                api('stats/summary', { params: { hours }, signal: historySignal }),
+                api('stats/timeseries', { params: { hours }, signal: historySignal }),
+                api('stats/hourly', { params: { days }, signal: historySignal }),
+                api('stats/weekday', { params: { days: Math.max(7, days) }, signal: historySignal }),
             ]);
-            lines = lineRows;
+            if (historySignal.aborted) return;
             const thin = summary.samples < 2;
             const collecting = t('stats.collecting');
 
@@ -279,40 +300,41 @@ export function renderStats(root, { params, signal }) {
                 },
             });
 
-            // Modes (HTML bars keep the mode colours legible).
-            const maxMode = Math.max(60, ...modes.map(m => m.avgDelaySec));
-            $('#modeBars').innerHTML = modes.length ? modes.map(m => `
-                <div class="mode-bar">
-                    <span class="name"><i style="background:${MODE_COLOR[m.mode] || MODE_COLOR.Unknown}"></i>${esc(modeName(m.mode, true))}</span>
-                    <span class="track"><span class="fill" style="display:block;width:${Math.max(2, (m.avgDelaySec / maxMode) * 100).toFixed(1)}%;background:${MODE_COLOR[m.mode] || MODE_COLOR.Unknown}"></span></span>
-                    <span class="val">${esc(fmtMin(m.avgDelaySec))} ${esc(t('unit.min'))}</span>
-                    <span class="detail">${esc(t('stats.modeDetail', { veh: fmtNum(m.avgVehicles), delayed: fmtNum(m.avgDelayed), share: fmtPct(m.delayedShare) }))}</span>
-                </div>`).join('') : stateBlock({ title: collecting });
-
-            // Worst 15 lines.
-            const top = lines.filter(l => l.tracked >= 3).slice(0, 15);
-            if (!top.length) emptyChart('cLines', collecting);
-            else chart('cLines', {
-                type: 'bar',
-                data: {
-                    labels: top.map(l => `${modeName(l.mode)} ${l.shortName}`),
-                    datasets: [{ label: t('stats.avgDelayMin'), data: top.map(l => +(l.avgDelaySec / 60).toFixed(2)), backgroundColor: top.map(l => routeColor(l)), borderRadius: 3 }],
-                },
-                options: {
-                    indexAxis: 'y', maintainAspectRatio: false,
-                    onClick: (_, els) => { if (els[0]) selectLine(top[els[0].index].routeId, true); },
-                    onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : ''; },
-                    plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: i => `${t('stats.delayedShare')}: ${fmtPct(top[i.dataIndex].delayedShare)}` } } },
-                    scales: { x: minAxis, y: { grid: { display: false }, ticks: { autoSkip: false } } },
-                },
-            });
-
-            drawTable();
-            if (selectedLine) loadLineDetail(selectedLine);
         } catch (err) {
-            if (err.name === 'AbortError') return;
+            if (err.name === 'AbortError' || historySignal.aborted) return;
             toast(errorText(err));
         }
+    }
+
+    function renderModes(modes) {
+        const maxMode = Math.max(60, ...modes.map(m => m.avgDelaySec));
+        $('#modeBars').innerHTML = modes.length ? modes.map(m => `
+            <div class="mode-bar">
+                <span class="name"><i style="background:${MODE_COLOR[m.mode] || MODE_COLOR.Unknown}"></i>${esc(modeName(m.mode, true))}</span>
+                <span class="track"><span class="fill" style="display:block;width:${Math.max(2, (m.avgDelaySec / maxMode) * 100).toFixed(1)}%;background:${MODE_COLOR[m.mode] || MODE_COLOR.Unknown}"></span></span>
+                <span class="val">${esc(fmtMin(m.avgDelaySec))} ${esc(t('unit.min'))}</span>
+                <span class="detail">${esc(t('stats.modeDetail', { veh: fmtNum(m.avgVehicles), delayed: fmtNum(m.avgDelayed), share: fmtPct(m.delayedShare) }))}</span>
+            </div>`).join('') : stateBlock({ title: t('stats.collecting') });
+    }
+
+    function renderLines() {
+        const top = lines.filter(l => l.tracked >= 3).slice(0, 15);
+        if (!top.length) emptyChart('cLines', t('stats.collecting'));
+        else chart('cLines', {
+            type: 'bar',
+            data: {
+                labels: top.map(l => `${modeName(l.mode)} ${l.shortName}`),
+                datasets: [{ label: t('stats.avgDelayMin'), data: top.map(l => +(l.avgDelaySec / 60).toFixed(2)), backgroundColor: top.map(l => routeColor(l)), borderRadius: 3 }],
+            },
+            options: {
+                indexAxis: 'y', maintainAspectRatio: false,
+                onClick: (_, els) => { if (els[0]) selectLine(top[els[0].index].routeId, true); },
+                onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : ''; },
+                plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: i => `${t('stats.delayedShare')}: ${fmtPct(top[i.dataIndex].delayedShare)}` } } },
+                scales: { x: minAxis, y: { grid: { display: false }, ticks: { autoSkip: false } } },
+            },
+        });
+        drawTable();
     }
 
     // ---------- Lines table ----------
@@ -346,12 +368,12 @@ export function renderStats(root, { params, signal }) {
             </tr>`).join('')}</tbody></table>`;
     }
 
-    async function loadLineDetail(routeId) {
+    async function loadLineDetail(routeId, requestSignal = signal) {
         const box = $('#lineDetail');
         const hours = RANGES.find(r => r.key === rangeKey).hours;
         box.innerHTML = '<div class="skeleton" style="height:200px;margin-bottom:16px"></div>';
         try {
-            const d = await api(`stats/lines/${encodeURIComponent(routeId)}`, { params: { hours }, signal });
+            const d = await api(`stats/lines/${encodeURIComponent(routeId)}`, { params: { hours }, signal: requestSignal });
             if (selectedLine !== routeId) return;
             const route = d.route || { shortName: routeId, mode: 'Unknown' };
             box.innerHTML = `<div class="line-detail card" style="margin:0 0 16px;background:var(--surface)">
@@ -439,6 +461,7 @@ export function renderStats(root, { params, signal }) {
 
     return () => {
         clearInterval(liveTimer);
+        historyController?.abort();
         charts.forEach(c => c.destroy());
         charts.clear();
     };
