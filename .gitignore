@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Runtime data (downloaded GTFS feed, statistics database)
+App_Data/
+
+# Impeccable design-hook cache
+.impeccable/
